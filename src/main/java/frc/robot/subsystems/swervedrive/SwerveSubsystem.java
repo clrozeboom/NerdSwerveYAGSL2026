@@ -98,6 +98,12 @@ public class SwerveSubsystem extends SubsystemBase
     // (pushOffsetsToEncoders()/useExternalFeedbackSensor() are for SparkMax-native absolute
     // encoders wired directly into the SparkMax and are no-ops for our CAN-based Thrifty encoders.)
     swerveDrive.setModuleEncoderAutoSynchronize(true, 1);
+    // Real feedforward, measured with sysIdDriveMotorCommand() - see Constants.DrivebaseConstants.
+    // Without this, the drive velocity loop leans entirely on its PIDF ("p": 0.001), which isn't
+    // enough to push through each module's static friction (kS) at low commanded speeds - that's
+    // why wheels were sitting still for small stick deflections instead of moving.
+    replaceSwerveModuleFeedforward(Constants.DrivebaseConstants.DRIVE_KS, Constants.DrivebaseConstants.DRIVE_KV,
+                                   Constants.DrivebaseConstants.DRIVE_KA);
 
     setupPathPlanner();
   }

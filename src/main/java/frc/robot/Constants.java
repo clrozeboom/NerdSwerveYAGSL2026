@@ -37,6 +37,14 @@ public final class Constants
 
     // Hold time on motor brakes when disabled
     public static final double WHEEL_LOCK_TIME = 10; // seconds
+
+    // Drive feedforward, measured via sysIdDriveMotorCommand() and averaged across all 4 modules.
+    // frontright's static friction ran noticeably higher than the other three (~0.65V vs ~0.31-0.41V)
+    // when this was measured - worth a physical look at that corner, but not folded in specially here
+    // since replaceSwerveModuleFeedforward() only accepts one feedforward for the whole drivetrain.
+    public static final double DRIVE_KS = 0.4234; // Volts
+    public static final double DRIVE_KV = 1.0618; // Volts per m/s
+    public static final double DRIVE_KA = 0.129;  // Volts per m/s^2
   }
 
   public static class OperatorConstants
