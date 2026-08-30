@@ -1,70 +1,161 @@
-# Yet Another Generic Swerve Library (YAGSL) Example project — 2026
+# NerdSwerve 2027 — Custom Swerve
 
-This is the 2026-season port of [NerdSwerveYAGSL](https://github.com/), rebuilt on the 2026 WPILib base
-project. The robot code, YAGSL swerve/PathPlanner configuration under `src/main/deploy`, and overall
-structure are unchanged from the 2025 project — only the vendor libraries and the year-specific
-GradleRIO/WPILib base were updated.
+Team 5010's swerve drivetrain, written from scratch against **WPILib 2027.0.0-alpha-6** using the
+**Commands v2** framework, structured the way an AdvantageKit swerve project is structured.
 
-YAGSL is intended to be an easy implementation of a generic swerve drive that should work for most
-square swerve drives. The project is documented [here](https://github.com/Yet-Another-Software-Suite/YAGSL/wiki).
+This replaces the YAGSL-based 2026 project. Every drivetrain number here — CAN IDs, gear ratios,
+encoder offsets, current limits, module positions, feedforward gains — was carried over from that
+project's `deploy/swerve/neo` configuration and its `Constants.java`, so this describes the same
+physical robot.
 
-This example is intended to be a starting place on how to use YAGSL. By no means is this intended to
-be the base of your robot project. YAGSL provides an easy way to generate a SwerveDrive which can be
-used in both TimedRobot and Command-Based Robot templates.
+---
 
-## Vendor library versions
+## Why alpha-6 and not alpha-7
 
-The absolute-latest vendor releases as of build time (August 2026) include early previews for the
-*2027* season (WPILib/REVLib/Phoenix 6/PhotonVision alpha builds tied to the new "SystemCore"
-hardware) mixed in alongside the last stable 2026 releases. To keep this project on stable,
-in-season code, every vendordep below is pinned to the last stable release from **around
-April/May 2026** rather than whatever is newest today:
+alpha-7 is the newest WPILib 2027 alpha, but alpha-6 is the better place to build right now:
 
-| Library | Version | Notes |
-|---|---|---|
-| GradleRIO / WPILib | 2026.2.1 | Last stable 2026 WPILib release (Jan 2026); no newer non-alpha release exists |
-| YAGSL | 2026.4.1 | Apr 1, 2026 — last release before an Aug 2026 update burst |
-| PathPlannerLib | 2026.1.2 | Jan 2026 — still the current stable release |
-| CTRE Phoenix 6 | 26.3.0 | May 26, 2026 |
-| CTRE Phoenix 5 | 5.36.0 | Current stable for 2026 |
-| REVLib | 2026.0.5 | Current stable 2026 channel (REV's `2027.0.0-alpha` builds are on a separate track) |
-| ReduxLib | 2026.1.2 | Current stable 2026 channel |
-| Studica (NavX) | 2026.0.0 | Current stable 2026 channel |
-| ThriftyLib | 2026.1.2 | Current stable 2026 channel |
-| PhotonLib | v2026.3.4 | Apr 10, 2026 — last stable release before PhotonVision's 2027 alpha |
-| maple-sim | 0.4.0-beta | Jan 17, 2026 — 2026 game-piece rebuild, still the current release |
+- **Every published 2027 vendordep targets `2027_alpha5`.** PathPlannerLib, Phoenix6, REVLib,
+  ReduxLib, ThriftyLib and PhotonLib all declare that. Checking their jars' class references against
+  each alpha, the classes they need — `SendableChooser`, `SmartDashboard`, `Sendable`, `Alert`,
+  `Pair`, `AprilTagFieldLayout`, `EpilogueBackend` — all still exist in alpha-6. Several are **gone**
+  in alpha-7.
+- **alpha-7 deleted the whole `Sendable`/`SmartDashboard` world** and replaced it with new
+  `org.wpilib.telemetry` and `org.wpilib.tunable` modules. Building on alpha-6 means the dashboard
+  code here is ordinary and portable rather than written against modules that did not exist a
+  release ago.
 
-All versions above were verified to actually resolve (`./gradlew build`) and, for YAGSL, to
-successfully parse every config under `src/main/deploy/swerve` (`neo`, `maxSwerve`, `falcon`).
+The cost is that alpha-6's WPILib jars are **not** on the public frcmaven mirror — only alpha-7 is.
+They come from the local WPILib 2027 alpha-6 installer, which `settings.gradle` points at via
+`wpilibYear = '2027_alpha6'`. Everyone building this needs that installer.
 
-[Javadocs here](https://yet-another-software-suite.github.io/YAGSL/javadocs/)  
-[Library here](https://github.com/Yet-Another-Software-Suite/YAGSL/)  
-[WIKI](https://github.com/Yet-Another-Software-Suite/YAGSL/wiki)  
-[Config Generation](https://docs.yagsl.com/)
+### Migrating to alpha-7 later
 
-## Migrating to a newer library version
+The changes this project would need, all mechanical:
 
-If you later want to move off these pinned versions, use the WPILib VS Code extension's
-"Manage Vendor Libraries" → "Install new library (online)" for each vendor, then re-run
-`./gradlew build` and re-check that your `src/main/deploy/swerve/*` configs still parse — YAGSL's
-JSON schema occasionally changes between seasons (see "Migrating Old Configuration Files" below,
-kept from the upstream YAGSL-Example README for reference).
+| alpha-6 | alpha-7 |
+| --- | --- |
+| `Rotation2d.kZero`, `Pose2d.kZero`, `Translation2d.kZero` | `.ZERO` (constants renamed to all-caps) |
+| `Translation2d.getAngle()` returns `Rotation2d` | returns `Optional<Rotation2d>` |
+| `org.wpilib.smartdashboard.SmartDashboard` | removed → `org.wpilib.telemetry.Telemetry` |
+| `org.wpilib.smartdashboard.SendableChooser` | removed → `org.wpilib.tunable.Selectable` + `Tunables.publish` |
+| `org.wpilib.smartdashboard.Field2d` | removed along with `Sendable` |
+| `org.wpilib.driverstation.Alert` | `org.wpilib.util.Alert` |
+| `org.wpilib.math.util.Pair` | `org.wpilib.util.Pair` |
 
-### My Robot Spins around uncontrollably during autonomous or when attempting to set the heading!
+`SmartDashboard` is only touched in two places — `util/Telem.java` and the chooser/field wiring in
+`Drive` and `RobotContainer` — which is why `Telem` exists at all.
 
-* Invert the gyroscope.
-* Invert the drive motors for every module. (If front and back become reversed when turning)
+---
 
-### Angle motors are erratic.
+## Structure
 
-* Invert the angle motor.
+The AdvantageKit pattern, without the AdvantageKit dependency:
 
-### My robot is heavy.
+```
+subsystems/drive/
+  Drive.java           subsystem: kinematics, odometry, control
+  Module.java          per-module logic: units, optimization, telemetry
+  ModuleIO.java        hardware interface + ModuleIOInputs struct
+  ModuleIOSim.java       physics sim
+  ModuleIOSpark.java     SPARK MAX + NEO + Thrifty analog encoder
+  GyroIO.java          gyro interface + GyroIOInputs struct
+  GyroIONone.java        no gyro (current default)
+  GyroIOOnboard.java     SystemCore's built-in IMU
+commands/DriveCommands.java   command factories
+util/Telem.java               telemetry facade
+```
 
-* Implement momentum velocity limitations in SwerveMath.
+Every loop reads all hardware into the `*Inputs` structs first, then runs control off that one
+snapshot. That is the property that makes replay possible and that keeps sim and real behaviour
+identical.
 
-### Ensure the IMU is centered on the robot
+**AdvantageKit itself is deliberately not a dependency.** The request was for code that works the way
+AdvantageKit swerve code works, and the structure above delivers that: hardware swapped by
+constructor argument, logic testable without a robot, sim and real sharing one control path. Taking
+the actual dependency would add a vendordep that is itself built for alpha-5, plus the `gversion`
+build plumbing. The `*Inputs` classes are plain structs of primitives, so if you do want real replay
+logging later, annotating them `@AutoLog` and swapping `Telem` for `Logger` is the whole job.
 
-# Maintainers (upstream YAGSL)
-- @thenetworkgrinch
-- @Technologyman00
+---
+
+## Gyro
+
+There is no gyro wired up. `RobotContainer` constructs `GyroIONone`, and `Drive` handles that by
+integrating module positions to track heading — field-relative driving works, it just drifts.
+
+The YAGSL config used a NavX, which has no 2027 release and which SystemCore could not talk to
+anyway now that SPI is removed. The replacement is already written: **`GyroIOOnboard`** uses
+SystemCore's built-in IMU. To switch, change one line in `RobotContainer` and confirm the mount
+orientation — `MountOrientation.FLAT` assumes the SystemCore is mounted horizontally. Note that
+`GyroIOOnboard` reads the raw Z gyro rate, which is only the robot's yaw rate when mounted `FLAT`.
+
+Hold **left bumper** to drive robot-relative, which is what you want whenever the heading estimate
+is not trustworthy.
+
+---
+
+## Controls
+
+| Control | Action |
+| --- | --- |
+| Left stick | Translate (field-relative) |
+| Right stick X | Rotate |
+| Left bumper (hold) | Drive robot-relative instead |
+| East face button (B) | Hold modules in an X |
+| Start | Zero heading |
+
+2027 replaced the individual controller classes with a single `Gamepad`, so bindings use
+`CommandGamepad` and its face-direction button names (`eastFace()` rather than `b()`).
+
+---
+
+## Values worth a second look
+
+These were carried across verbatim because they describe the existing robot, but they looked unusual
+on the way over:
+
+- **`MAX_LINEAR_SPEED` is 1 ft/s (~0.3 m/s).** That is the YAGSL project's `MAX_SPEED` unchanged — a
+  deliberately crawling value. A NEO swerve module will do roughly 4–5 m/s. `MAX_ANGULAR_SPEED`
+  scales off this, so raising one raises both.
+- **Drive gear ratio 1.36 with a 2 in wheel.** Most swerve modules are between 4:1 and 8:1. Worth
+  confirming against the physical module before driving at speed.
+- **PID gains do not transfer.** `DRIVE_KP` and `TURN_KP` came from the YAGSL config, but YAGSL ran
+  its loops in different units than this project does. They are starting points, not a tune.
+- **Feedforward gains do transfer**, since they are physical — but they were measured in volts per
+  m/s, so `Constants.Module` converts them to volts per wheel-rad/s. The originals are kept as
+  `DRIVE_KV_PER_METER_PER_SEC` / `DRIVE_KA_PER_METER_PER_SEC2`.
+- **Front-right static friction.** The 2026 project measured ~0.65 V against ~0.31–0.41 V on the
+  other three corners. Still worth a physical look. Unlike YAGSL, this structure could hold
+  per-module gains if you want to chase it.
+
+Re-run `DriveCommands.feedforwardCharacterization` (available from the auto chooser) after any
+gearing or wheel change.
+
+---
+
+## Not yet carried over
+
+- **PathPlanner / autonomous paths.** The auto chooser currently offers "Do Nothing" and the
+  characterization routine. PathPlannerLib has a 2027 alpha-3 build that is compatible with alpha-6.
+- **Vision.** PhotonLib has a 2027 alpha-2 build, also alpha-6-compatible.
+- **Pose estimation from vision.** `Drive` tracks pose by wheel odometry only. WPILib's
+  `SwerveDrivePoseEstimator` exists in alpha-6 and slots in behind the same interface when there is
+  a vision measurement to fuse.
+
+---
+
+## Verification status
+
+This code has **not been compiled.** WPILib 2027 targets Java 25 and its jars are Java 25 class
+files; no JDK 25 was available in the environment where this was written, and alpha-6's jars are not
+on the public mirror. Instead, every WPILib class and method it calls was checked individually
+against the alpha-6 sources at tag `v2027.0.0-alpha-6` and the alpha-7 jars. That caught real
+differences — `MathUtil.clamp` and `LinearSystemId` are both gone in 2027, and `AnalogEncoder` has
+no `isConnected()` — but it is not a substitute for a build.
+
+`ModuleIOSpark` is the least verified file: `maven.revrobotics.com` was unreachable, so its REVLib
+calls follow the 2025/2026 API from memory of that API's shape rather than from the alpha-6 jar. If
+anything there fails to resolve, it is contained to that one file — everything else talks to
+`ModuleIO`.
+
+**Build it first.** `./gradlew build`, then `./gradlew simulateJava` to drive it in the simulator.
