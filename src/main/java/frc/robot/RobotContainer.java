@@ -6,6 +6,7 @@ package frc.robot;
 
 import frc.robot.Constants.ModuleConfig;
 import frc.robot.commands.DriveCommands;
+import frc.robot.commands.TuningCommands;
 import frc.robot.subsystems.drive.Drive;
 import frc.robot.subsystems.drive.GyroIONone;
 import frc.robot.subsystems.drive.ModuleIOSim;
@@ -93,6 +94,18 @@ public class RobotContainer {
     autoChooser.addOption(
         "Drive Feedforward Characterization",
         DriveCommands.feedforwardCharacterization(drive, 0.5, 6.0));
+
+    // Bring-up routines. These live on the auto chooser because that is the one place a command can
+    // be picked and run without a controller binding; see TuningCommands for what each one measures
+    // and which of them move the robot.
+    if (Constants.TUNING_MODE) {
+      autoChooser.addOption("Tuning: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
+      autoChooser.addOption("Tuning: Turn Step Response", TuningCommands.turnStepResponse(drive));
+      autoChooser.addOption("Tuning: Drive Step Response", TuningCommands.driveStepResponse(drive));
+      autoChooser.addOption("Tuning: Measure Wheel Radius", TuningCommands.measureWheelRadius(drive));
+      autoChooser.addOption("Tuning: Drive SysId (all four)", TuningCommands.driveSysIdFull(drive));
+    }
+
     SmartDashboard.putData("Auto Chooser", autoChooser);
   }
 

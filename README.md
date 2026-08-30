@@ -147,8 +147,55 @@ on the way over:
   other three corners. Still worth a physical look. Unlike YAGSL, this structure could hold
   per-module gains if you want to chase it.
 
-Re-run `DriveCommands.feedforwardCharacterization` (available from the auto chooser) after any
-gearing or wheel change.
+Every one of these has a bring-up routine that measures it — see below.
+
+---
+
+## Bring-up and tuning
+
+Several numbers above are inherited rather than measured, so the project ships routines that turn
+each of them into a measurement. They appear on the **auto chooser** (the one place a command can be
+selected and run without a controller binding) whenever `Constants.TUNING_MODE` is true, and they
+all log to the `Tuning/` table — read the result from the plot in AdvantageScope, not from a number
+on the dashboard.
+
+| Routine | Measures | Moves the robot? |
+| --- | --- | --- |
+| Report Encoder Offsets | absolute encoder offsets | no — runs disabled |
+| Turn Step Response | turn kP / kD | modules steer, wheels held still |
+| Drive Step Response | drive kP | **yes** |
+| Measure Wheel Radius | true wheel radius / gear ratio | **yes**, several metres |
+| Drive SysId (all four) | drive kS / kV / kA, and a recommended kP | **yes**, both directions |
+
+### Tuning kP without redeploying
+
+Gains are `TunableNumber`s, which publish to the dashboard under `Tuning/Drive/*` and `Tuning/Turn/*`
+and push down to the controllers the moment they change. So a tuning session is:
+
+1. Select **Turn Step Response** (or **Drive Step Response**) and enable.
+2. Watch `Tuning/TurnSetpointDeg` against `Drive/<module>/TurnPositionDeg` in AdvantageScope.
+3. Drag `Tuning/Turn/kP` on the dashboard. Raise it until the module just begins to overshoot, then
+   back off slightly or add a little kD.
+4. Copy the settled value into `Constants` and set `TUNING_MODE = false` before competition — with
+   it off, every `TunableNumber` collapses to its compiled-in value and no dashboard entry is
+   created, so nothing depends on a number somebody forgot to set.
+
+Because `TunableNumber` is built on AdvantageKit's `LoggedNetworkNumber`, the gains land in the log
+too — a replay re-runs with the gains that were actually in effect, rather than whatever is compiled
+in today.
+
+### Suggested order
+
+1. **Report Encoder Offsets** first. The offsets in `Constants` came from YAGSL, which read the
+   Thrifty encoders through its own conversion; there is no reason to expect them to transfer. Point
+   all four wheels forward by hand, run it disabled, copy the four printed numbers into
+   `Constants.ModuleConfig`.
+2. **Measure Wheel Radius**, because a wrong radius or gear ratio makes every distance the robot
+   believes wrong by the same factor — including odometry.
+3. **Drive SysId**, for kS/kV/kA in the correct units. Only meaningful once step 2 is settled.
+4. **Step responses**, for the two kP values. Drive kP should only be closing a small gap; if it has
+   to be large to reach the setpoint at all, the feedforward is wrong — go back to step 3 rather
+   than fighting it with kP.
 
 ---
 

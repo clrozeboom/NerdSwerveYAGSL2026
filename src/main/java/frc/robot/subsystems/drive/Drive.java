@@ -168,6 +168,50 @@ public class Drive extends SubsystemBase {
     }
   }
 
+  /**
+   * Points all four modules at one angle without moving the wheels. The turn step-response test uses
+   * this: step the angle, then watch setpoint against measured to judge turn kP.
+   *
+   * @param angle the heading to command
+   */
+  public void runTurnSetpoint(Rotation2d angle) {
+    for (Module module : modules) {
+      module.runTurnSetpoint(angle);
+      module.runDriveSetpoint(0.0);
+    }
+    Logger.recordOutput("Tuning/TurnSetpointDeg", angle.getDegrees());
+  }
+
+  /**
+   * Commands one wheel speed to all four modules with the modules held straight. The drive step test
+   * uses this to judge drive kP against a square-wave setpoint.
+   *
+   * @param velocityRadPerSec wheel speed, in radians per second
+   */
+  public void runDriveSetpoint(double velocityRadPerSec) {
+    for (Module module : modules) {
+      module.runTurnSetpoint(Rotation2d.kZero);
+      module.runDriveSetpoint(velocityRadPerSec);
+    }
+    Logger.recordOutput("Tuning/DriveSetpointRadPerSec", velocityRadPerSec);
+    Logger.recordOutput(
+        "Tuning/DriveSetpointMetersPerSec", velocityRadPerSec * Constants.Module.WHEEL_RADIUS);
+  }
+
+  /** Average measured wheel speed across the four modules, in rad/s. Pairs with the step test. */
+  public double getAverageWheelVelocityRadPerSec() {
+    double sum = 0.0;
+    for (Module module : modules) {
+      sum += module.getVelocityMetersPerSec() / Constants.Module.WHEEL_RADIUS;
+    }
+    return sum / modules.length;
+  }
+
+  /** The four modules, so bring-up routines can address them individually. */
+  public Module[] getModules() {
+    return modules;
+  }
+
   /** Average wheel travel across the four modules, in radians. Pairs with SysId data. */
   public double getCharacterizationPosition() {
     double sum = 0.0;

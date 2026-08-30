@@ -79,4 +79,23 @@ public interface ModuleIO {
 
   /** Switches the drive motor between brake and coast. */
   default void setBrakeMode(boolean enabled) {}
+
+  /**
+   * Replaces the drive velocity gains at runtime. Used by the tuning mode so gains can be edited
+   * from the dashboard without a redeploy.
+   *
+   * @param kP proportional gain, in volts per (rad/s) of error
+   * @param kD derivative gain
+   * @param kS static friction feedforward, in volts
+   * @param kV velocity feedforward, in volts per (rad/s)
+   */
+  default void setDriveGains(double kP, double kD, double kS, double kV) {}
+
+  /**
+   * Replaces the turn position gains at runtime.
+   *
+   * @param kP proportional gain, in volts per radian of error
+   * @param kD derivative gain
+   */
+  default void setTurnGains(double kP, double kD) {}
 }

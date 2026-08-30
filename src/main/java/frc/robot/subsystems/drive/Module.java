@@ -5,6 +5,7 @@
 package frc.robot.subsystems.drive;
 
 import frc.robot.Constants;
+import frc.robot.util.TunableNumber;
 import org.littletonrobotics.junction.Logger;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.kinematics.SwerveModulePosition;
@@ -18,6 +19,21 @@ import org.wpilib.math.kinematics.SwerveModuleVelocity;
  * never touches a motor controller directly.
  */
 public class Module {
+  // Shared across all four modules: tuning one corner's gains and having the others disagree is
+  // almost never what you want, and one set of dashboard entries is easier to drive.
+  private static final TunableNumber driveKp =
+      new TunableNumber("Tuning/Drive/kP", Constants.Module.DRIVE_KP);
+  private static final TunableNumber driveKd =
+      new TunableNumber("Tuning/Drive/kD", Constants.Module.DRIVE_KD);
+  private static final TunableNumber driveKs =
+      new TunableNumber("Tuning/Drive/kS", Constants.Module.DRIVE_KS);
+  private static final TunableNumber driveKv =
+      new TunableNumber("Tuning/Drive/kV", Constants.Module.DRIVE_KV);
+  private static final TunableNumber turnKp =
+      new TunableNumber("Tuning/Turn/kP", Constants.Module.TURN_KP);
+  private static final TunableNumber turnKd =
+      new TunableNumber("Tuning/Turn/kD", Constants.Module.TURN_KD);
+
   private final ModuleIO io;
   private final ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();
   private final String name;
@@ -25,6 +41,13 @@ public class Module {
   public Module(ModuleIO io, String name) {
     this.io = io;
     this.name = name;
+
+    // Both IO implementations already apply the compiled-in gains when they are constructed, so
+    // consume the initial "changed" state here. Without this the first periodic() would re-push all
+    // six gains, which on real hardware is eight blocking CAN configure() calls landing in the first
+    // loop of the match.
+    TunableNumber.anyChanged(hashCode(), driveKp, driveKd, driveKs, driveKv);
+    TunableNumber.anyChanged(hashCode(), turnKp, turnKd);
   }
 
   /**
@@ -40,6 +63,15 @@ public class Module {
     Logger.recordOutput("Drive/" + name + "/DrivePositionMeters", getPositionMeters());
     Logger.recordOutput("Drive/" + name + "/DriveVelocityMetersPerSec", getVelocityMetersPerSec());
     Logger.recordOutput("Drive/" + name + "/TurnPositionDeg", getAngle().getDegrees());
+
+    // Push edited gains down to the controller, but only when something actually changed — on a
+    // SPARK MAX each push is a CAN transaction.
+    if (TunableNumber.anyChanged(hashCode(), driveKp, driveKd, driveKs, driveKv)) {
+      io.setDriveGains(driveKp.get(), driveKd.get(), driveKs.get(), driveKv.get());
+    }
+    if (TunableNumber.anyChanged(hashCode(), turnKp, turnKd)) {
+      io.setTurnGains(turnKp.get(), turnKd.get());
+    }
   }
 
   /**
@@ -107,6 +139,29 @@ public class Module {
   /** Wheel travel in radians, used by the characterization routine. */
   public double getWheelRadiansForCharacterization() {
     return inputs.drivePositionRad;
+  }
+
+  /**
+   * Absolute encoder heading with the configured offset already applied. Reads zero when the module
+   * points forward and the offset is correct, which is what the offset calibration routine checks.
+   */
+  public Rotation2d getAbsolutePosition() {
+    return inputs.turnAbsolutePosition;
+  }
+
+  /** This module's name, for logging and for the calibration report. */
+  public String getName() {
+    return name;
+  }
+
+  /** Commands a raw module heading, bypassing optimization. Used by the turn step-response test. */
+  public void runTurnSetpoint(Rotation2d angle) {
+    io.setTurnPosition(angle);
+  }
+
+  /** Commands a raw wheel speed in rad/s, bypassing kinematics. Used by the drive step test. */
+  public void runDriveSetpoint(double velocityRadPerSec) {
+    io.setDriveVelocity(velocityRadPerSec);
   }
 
   /** True when both controllers answered on the last cycle. */

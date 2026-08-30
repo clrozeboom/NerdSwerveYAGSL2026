@@ -5,7 +5,6 @@
 package frc.robot.subsystems.drive;
 
 import com.revrobotics.PersistMode;
-import com.revrobotics.REVLibError;
 import com.revrobotics.RelativeEncoder;
 import com.revrobotics.ResetMode;
 import com.revrobotics.spark.ClosedLoopSlot;
@@ -58,6 +57,9 @@ public class ModuleIOSpark implements ModuleIO {
   private final SparkClosedLoopController turnController;
   private final AnalogEncoder absoluteEncoder;
   private final Rotation2d absoluteEncoderOffset;
+
+  private double driveKs = Constants.Module.DRIVE_KS;
+  private double driveKv = Constants.Module.DRIVE_KV;
 
   public ModuleIOSpark(ModuleConfig config) {
     driveSpark = new SparkMax(Constants.Module.CAN_BUS_ID, config.driveCanId, MotorType.kBrushless);
@@ -150,9 +152,7 @@ public class ModuleIOSpark implements ModuleIO {
 
   @Override
   public void setDriveVelocity(double velocityRadPerSec) {
-    double feedforwardVolts =
-        Constants.Module.DRIVE_KS * Math.signum(velocityRadPerSec)
-            + Constants.Module.DRIVE_KV * velocityRadPerSec;
+    double feedforwardVolts = driveKs * Math.signum(velocityRadPerSec) + driveKv * velocityRadPerSec;
     driveController.setSetpoint(
         velocityRadPerSec, ControlType.kVelocity, ClosedLoopSlot.kSlot0, feedforwardVolts);
   }
@@ -161,6 +161,24 @@ public class ModuleIOSpark implements ModuleIO {
   public void setTurnPosition(Rotation2d rotation) {
     turnController.setSetpoint(
         MathUtil.angleModulus(rotation.getRadians()), ControlType.kPosition);
+  }
+
+  @Override
+  public void setDriveGains(double kP, double kD, double kS, double kV) {
+    driveKs = kS;
+    driveKv = kV;
+    SparkMaxConfig config = new SparkMaxConfig();
+    config.closedLoop.pid(kP, 0.0, kD);
+    // kNoPersistParameters so a tuning session does not burn every edit to flash; once the numbers
+    // are settled they belong in Constants, not in the controller's memory.
+    driveSpark.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
+  }
+
+  @Override
+  public void setTurnGains(double kP, double kD) {
+    SparkMaxConfig config = new SparkMaxConfig();
+    config.closedLoop.pid(kP, 0.0, kD);
+    turnSpark.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
   }
 
   @Override

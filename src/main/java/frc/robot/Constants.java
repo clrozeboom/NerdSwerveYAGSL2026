@@ -18,6 +18,16 @@ import org.wpilib.math.util.Units;
 public final class Constants {
   private Constants() {}
 
+  /**
+   * Enables the live-editable tuning entries and the bring-up routines on the dashboard.
+   *
+   * <p>Leave this true through bring-up: it is what lets gains be dragged on the dashboard between
+   * step-response runs instead of redeployed. Set it false before competition, and every
+   * {@link frc.robot.util.TunableNumber} collapses to its compiled-in value so nothing depends on a
+   * dashboard entry that may not be set.
+   */
+  public static final boolean TUNING_MODE = true;
+
   /** Selects which {@code ModuleIO}/{@code GyroIO} implementations get wired up in RobotContainer. */
   public enum Mode {
     /** Running on a real SystemCore with real SPARK MAXes. */
