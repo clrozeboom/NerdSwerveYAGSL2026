@@ -28,6 +28,35 @@ public final class Constants {
    */
   public static final boolean TUNING_MODE = true;
 
+  /**
+   * Parameters for the SysId routines, sized to the space available rather than to the defaults.
+   *
+   * <p>WPILib's stock SysId config (1 V/s ramp, 10 s timeout, 7 V step) assumes a normally-geared
+   * drivetrain. This one is not: the inherited 1.36:1 reduction on a 2 in wheel implies a free speed
+   * around 11 m/s, and at that speed the stock config would need roughly 43 m for a quasistatic test
+   * and 34 m for a dynamic one. The whole field is 16 m.
+   *
+   * <p>The values below keep each test inside about 2.5 m. If the wheel-radius check shows the
+   * drivetrain is actually geared down more than the config claims — which is the likely direction,
+   * since 1.36:1 is very low for a swerve module — it will be slower than this and use even less
+   * room, so these can be opened up once that is known.
+   */
+  public static final class SysId {
+    private SysId() {}
+
+    /** Quasistatic voltage ramp rate, in volts per second. */
+    public static final double RAMP_RATE_VOLTS_PER_SEC = 0.5;
+
+    /** Quasistatic cutoff, in seconds. Peak voltage is RAMP_RATE * QUASISTATIC_TIMEOUT. */
+    public static final double QUASISTATIC_TIMEOUT_SECS = 4.0;
+
+    /** Dynamic step voltage. */
+    public static final double STEP_VOLTS = 2.0;
+
+    /** Dynamic cutoff, in seconds. */
+    public static final double DYNAMIC_TIMEOUT_SECS = 1.5;
+  }
+
   /** Selects which {@code ModuleIO}/{@code GyroIO} implementations get wired up in RobotContainer. */
   public enum Mode {
     /** Running on a real SystemCore with real SPARK MAXes. */

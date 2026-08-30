@@ -159,13 +159,37 @@ selected and run without a controller binding) whenever `Constants.TUNING_MODE` 
 all log to the `Tuning/` table — read the result from the plot in AdvantageScope, not from a number
 on the dashboard.
 
-| Routine | Measures | Moves the robot? |
+| Routine | Measures | Space needed |
 | --- | --- | --- |
-| Report Encoder Offsets | absolute encoder offsets | no — runs disabled |
-| Turn Step Response | turn kP / kD | modules steer, wheels held still |
-| Drive Step Response | drive kP | **yes** |
-| Measure Wheel Radius | true wheel radius / gear ratio | **yes**, several metres |
-| Drive SysId (all four) | drive kS / kV / kA, and a recommended kP | **yes**, both directions |
+| Report Encoder Offsets | absolute encoder offsets | none — runs disabled |
+| Turn Step Response | turn kP / kD | none — modules steer, wheels held still |
+| Drive Step Response | drive kP | ~0.5 m per cycle, **open-ended** |
+| Measure Wheel Radius | true wheel radius / gear ratio | ~1.0 m, then stops |
+| Drive SysId (all four) | drive kS / kV / kA, and a recommended kP | ~2.5 m per run, both directions |
+
+### How much floor space
+
+Worked from the feedforward (`kS = 0.4234 V`, `kV = 1.0618 V per m/s`), so these are planning
+figures, not guarantees — kS and kV are part of what SysId is being run to re-measure. The likely
+error is on the safe side: if the drivetrain is geared down more than the config claims, it will be
+slower than predicted and use less room.
+
+- **Drive Step Response** — 10 rad/s (0.25 m/s) for a 2 s "on" phase is **~0.5 m per cycle**, and it
+  runs until interrupted. Five cycles is ~2.5 m. Watch two or three cycles and disable; don't leave
+  it running.
+- **Measure Wheel Radius** — 40 wheel radians at 0.2 m/s is **~1.0 m over ~5 s**, then it stops
+  itself. But it stops on *believed* distance, so if the wheel is larger than the configured 2 in it
+  will travel proportionally further. Give it 3 m the first time.
+- **Drive SysId** — **~2.3 m for each quasistatic run and ~2.2 m for each dynamic**, four runs total,
+  alternating forward and reverse. Clear roughly 3 m each way from the start point and it will stay
+  inside that. The routine prints its own predicted distances to the console before it moves.
+
+A space about **4 m long by 2 m wide** covers everything comfortably. In a smaller space, drop
+`Constants.SysId.QUASISTATIC_TIMEOUT_SECS` — distance scales with roughly its square, so 4 s → 3 s
+takes the quasistatic run from ~2.3 m to ~1.2 m.
+
+Note the tuning routines command the modules directly and **bypass** `MAX_LINEAR_SPEED`, so the 1
+ft/s teleop cap does not apply to them.
 
 ### Tuning kP without redeploying
 
@@ -193,6 +217,9 @@ in today.
 2. **Measure Wheel Radius**, because a wrong radius or gear ratio makes every distance the robot
    believes wrong by the same factor — including odometry.
 3. **Drive SysId**, for kS/kV/kA in the correct units. Only meaningful once step 2 is settled.
+   Note that WPILib's stock SysId config would need ~43 m on this drivetrain — the inherited 1.36:1
+   gearing implies roughly 11 m/s free speed — so `Constants.SysId` overrides it to fit a practice
+   space. Revisit those numbers once the real gearing is known.
 4. **Step responses**, for the two kP values. Drive kP should only be closing a small gap; if it has
    to be large to reach the setpoint at all, the feedforward is wrong — go back to step 3 rather
    than fighting it with kP.

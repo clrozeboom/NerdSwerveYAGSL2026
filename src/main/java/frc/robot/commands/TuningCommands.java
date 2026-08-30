@@ -228,14 +228,44 @@ public final class TuningCommands {
   public static SysIdRoutine driveSysIdRoutine(Drive drive) {
     return new SysIdRoutine(
         new SysIdRoutine.Config(
-            null,
-            // 4 V rather than the 7 V default: this drivetrain's max speed is set very low, so a
-            // full-voltage step would spend most of the test saturated.
-            Units.Volts.of(4.0),
-            null,
+            Units.Volts.per(Units.Second).of(Constants.SysId.RAMP_RATE_VOLTS_PER_SEC),
+            Units.Volts.of(Constants.SysId.STEP_VOLTS),
+            Units.Seconds.of(Constants.SysId.QUASISTATIC_TIMEOUT_SECS),
             state -> Logger.recordOutput("Tuning/SysIdState", state.toString())),
         new SysIdRoutine.Mechanism(
             voltage -> drive.runCharacterization(voltage.in(Units.Volts)), null, drive));
+  }
+
+  /**
+   * Steady-state speed the feedforward predicts at a given voltage, in m/s.
+   *
+   * <p>Only as good as kS and kV, which are exactly what SysId is being run to re-measure — so treat
+   * the distance predictions below as a planning figure, not a guarantee. The likely error is on the
+   * safe side: if the drivetrain is geared down more than the config claims, it will be slower than
+   * predicted and use less room.
+   */
+  private static double predictedSpeed(double volts) {
+    return Math.max(
+        0.0, (volts - Constants.Module.DRIVE_KS) / Constants.Module.DRIVE_KV_PER_METER_PER_SEC);
+  }
+
+  /** Distance a quasistatic ramp covers before its timeout, in metres. */
+  private static double quasistaticDistance() {
+    double rate = Constants.SysId.RAMP_RATE_VOLTS_PER_SEC;
+    double timeout = Constants.SysId.QUASISTATIC_TIMEOUT_SECS;
+    double startTime = Constants.Module.DRIVE_KS / rate;
+    if (timeout <= startTime) {
+      return 0.0;
+    }
+    // Integrate (rate*t - kS)/kV from the moment it breaks static friction to the timeout.
+    return (rate * (timeout * timeout - startTime * startTime) / 2
+            - Constants.Module.DRIVE_KS * (timeout - startTime))
+        / Constants.Module.DRIVE_KV_PER_METER_PER_SEC;
+  }
+
+  /** Distance a dynamic step covers, in metres. Ignores the acceleration ramp, so it over-estimates. */
+  private static double dynamicDistance() {
+    return predictedSpeed(Constants.SysId.STEP_VOLTS) * Constants.SysId.DYNAMIC_TIMEOUT_SECS;
   }
 
   /**
@@ -250,12 +280,42 @@ public final class TuningCommands {
   public static Command driveSysIdFull(Drive drive) {
     SysIdRoutine routine = driveSysIdRoutine(drive);
     return Commands.sequence(
+        Commands.runOnce(
+            () -> {
+              System.out.println("=== Drive SysId ===");
+              System.out.printf(
+                  "  quasistatic: %.1f V/s for %.1fs -> peak %.2f V, %.2f m/s, about %.1f m each%n",
+                  Constants.SysId.RAMP_RATE_VOLTS_PER_SEC,
+                  Constants.SysId.QUASISTATIC_TIMEOUT_SECS,
+                  Constants.SysId.RAMP_RATE_VOLTS_PER_SEC
+                      * Constants.SysId.QUASISTATIC_TIMEOUT_SECS,
+                  predictedSpeed(
+                      Constants.SysId.RAMP_RATE_VOLTS_PER_SEC
+                          * Constants.SysId.QUASISTATIC_TIMEOUT_SECS),
+                  quasistaticDistance());
+              System.out.printf(
+                  "  dynamic:     %.1f V for %.1fs -> %.2f m/s, about %.1f m each%n",
+                  Constants.SysId.STEP_VOLTS,
+                  Constants.SysId.DYNAMIC_TIMEOUT_SECS,
+                  predictedSpeed(Constants.SysId.STEP_VOLTS),
+                  dynamicDistance());
+              System.out.printf(
+                  "  Longest single run is about %.1f m. The robot returns toward its start between%n"
+                      + "  forward and reverse pairs, so clear roughly that much in each direction.%n",
+                  Math.max(quasistaticDistance(), dynamicDistance()));
+            }),
         routine.quasistatic(SysIdRoutine.Direction.kForward),
         Commands.waitSeconds(1.0),
         routine.quasistatic(SysIdRoutine.Direction.kReverse),
         Commands.waitSeconds(1.0),
-        routine.dynamic(SysIdRoutine.Direction.kForward),
+        // The Config timeout applies to both test types, so cap the dynamic runs separately —
+        // they reach full speed immediately and would otherwise cover far more ground.
+        routine
+            .dynamic(SysIdRoutine.Direction.kForward)
+            .withTimeout(Constants.SysId.DYNAMIC_TIMEOUT_SECS),
         Commands.waitSeconds(1.0),
-        routine.dynamic(SysIdRoutine.Direction.kReverse));
+        routine
+            .dynamic(SysIdRoutine.Direction.kReverse)
+            .withTimeout(Constants.SysId.DYNAMIC_TIMEOUT_SECS));
   }
 }
