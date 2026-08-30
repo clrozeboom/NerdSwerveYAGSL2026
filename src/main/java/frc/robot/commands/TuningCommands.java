@@ -133,6 +133,48 @@ public final class TuningCommands {
   }
 
   /**
+   * A single slow voltage ramp that plots applied volts against measured speed, so kS and kV can be
+   * read straight off the graph.
+   *
+   * <p>This measures the same two gains as {@link #spinSysIdFull(Drive)} and is the quick version of
+   * that step: one run instead of four, and the answer is read in AdvantageScope rather than exported
+   * to the SysId tool. Plot {@code Tuning/Feedforward/SpeedMetersPerSec} on the x axis against
+   * {@code Tuning/Feedforward/Volts} on the y — the intercept is kS and the slope is kV. Use the
+   * full SysId routine when you want its statistics and its recommended kP; use this when you just
+   * want to see whether the numbers are sane.
+   *
+   * <p>Spins rather than driving straight, and shares the ramp rate and timeout in
+   * {@link Constants.SysId}, so it covers the same ~1.75 rotations as one quasistatic run. The
+   * original version of this routine ramped to 6 V over 12 s, which on this drivetrain would have
+   * been 29 m of travel.
+   *
+   * @param drive the drivetrain
+   * @return a command that ramps, then stops itself
+   */
+  public static Command feedforwardRamp(Drive drive) {
+    Timer timer = new Timer();
+    return Commands.runEnd(
+            () -> {
+              double volts = timer.get() * Constants.SysId.RAMP_RATE_VOLTS_PER_SEC;
+              drive.runCharacterizationSpin(volts);
+              Logger.recordOutput("Tuning/Feedforward/Volts", volts);
+              Logger.recordOutput(
+                  "Tuning/Feedforward/SpeedMetersPerSec",
+                  drive.getAverageWheelVelocityRadPerSec() * Constants.Module.WHEEL_RADIUS);
+            },
+            () -> {
+              drive.stop();
+              timer.stop();
+              System.out.println(
+                  "=== Feedforward ramp done. Plot Tuning/Feedforward/Volts against"
+                      + " Tuning/Feedforward/SpeedMetersPerSec: intercept is kS, slope is kV. ===");
+            },
+            drive)
+        .beforeStarting(timer::restart)
+        .until(() -> timer.get() >= Constants.SysId.QUASISTATIC_TIMEOUT_SECS);
+  }
+
+  /**
    * Reports the absolute encoder offsets needed to make the current physical module positions read
    * as zero.
    *

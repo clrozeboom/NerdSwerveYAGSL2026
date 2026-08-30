@@ -13,7 +13,6 @@ import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.math.util.MathUtil;
-import org.wpilib.system.Timer;
 
 /** Command factories for the drivetrain. */
 public final class DriveCommands {
@@ -85,32 +84,6 @@ public final class DriveCommands {
   /** Holds the modules in an X so the robot resists being pushed. */
   public static Command stopWithX(Drive drive) {
     return Commands.run(drive::stopWithX, drive);
-  }
-
-  /**
-   * Ramps the drive motors up linearly while the modules point straight ahead, logging voltage
-   * against wheel velocity so drive kS and kV can be re-derived.
-   *
-   * <p>The gains currently in {@link Constants.Module} came from a SysId run on the YAGSL project.
-   * Re-run this after any gearing or wheel change.
-   *
-   * @param drive the drivetrain
-   * @param voltsPerSecond how fast to ramp
-   * @param maxVolts voltage at which to stop
-   * @return a command that ends when maxVolts is reached
-   */
-  public static Command feedforwardCharacterization(
-      Drive drive, double voltsPerSecond, double maxVolts) {
-    Timer timer = new Timer();
-    return Commands.runEnd(
-            () -> drive.runCharacterization(timer.get() * voltsPerSecond),
-            () -> {
-              drive.stop();
-              timer.stop();
-            },
-            drive)
-        .beforeStarting(timer::restart)
-        .until(() -> timer.get() * voltsPerSecond >= maxVolts);
   }
 
   /**

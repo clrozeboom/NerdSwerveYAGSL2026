@@ -91,10 +91,6 @@ public class RobotContainer {
 
   private void configureAutoChooser() {
     autoChooser.setDefaultOption("Do Nothing", Commands.none());
-    autoChooser.addOption(
-        "Drive Feedforward Characterization",
-        DriveCommands.feedforwardCharacterization(drive, 0.5, 6.0));
-
     // Bring-up routines. These live on the auto chooser because that is the one place a command can
     // be picked and run without a controller binding; see TuningCommands for what each one measures
     // and which of them move the robot.
@@ -102,6 +98,7 @@ public class RobotContainer {
       // Listed in the order the README's bring-up sequence works through them: everything that
       // fits in a metre of clearance first, then the two that need a runway.
       autoChooser.addOption("Tuning 1: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
+      autoChooser.addOption("Tuning 2: Feedforward Ramp (quick)", TuningCommands.feedforwardRamp(drive));
       autoChooser.addOption("Tuning 2: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
       autoChooser.addOption("Tuning 3: Spin Step Response", TuningCommands.spinStepResponse(drive));
       autoChooser.addOption("Tuning 3: Turn Step Response", TuningCommands.turnStepResponse(drive));

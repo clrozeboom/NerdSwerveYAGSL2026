@@ -166,6 +166,7 @@ on the dashboard.
 | Spin Step Response | drive kP | ~1 m around the robot | floor |
 | Drive Step Response | drive kP | ~0.5 m per cycle, **open-ended** | floor |
 | Measure Wheel Radius | true wheel radius / gear ratio | ~1.0 m, then stops | **no** |
+| Feedforward Ramp | drive kS / kV, read off a plot | ~1 m around the robot | floor |
 | Spin SysId (all four) | drive kS / kV | ~1 m around the robot | floor |
 | Drive SysId (all four) | drive kS / kV / kA | ~2.5 m per run, both ways | floor |
 
@@ -255,9 +256,13 @@ have one.
    the Thrifty encoders through its own conversion, so there is no reason to expect them to transfer.
    Copy the four printed numbers into `Constants.ModuleConfig` and redeploy. Nothing below means much
    until this is right.
-2. **Spin SysId**, for kS and kV in the correct units. About 1.75 rotations per run, four runs. These
-   are the gains the drive feedforward actually uses, and the spin measures them exactly as well as a
-   straight line would.
+2. **Feedforward Ramp** or **Spin SysId**, for kS and kV in the correct units — the two gains the
+   drive feedforward actually uses. Both spin in place and both cover about 1.75 rotations per run.
+   The ramp is one run and you read the answer straight off a plot: put
+   `Tuning/Feedforward/SpeedMetersPerSec` on the x axis against `Tuning/Feedforward/Volts` on the y,
+   and the intercept is kS while the slope is kV. Spin SysId is four runs and needs the log exported
+   to the SysId tool, but gives you its statistics and a recommended kP alongside. Start with the
+   ramp to see whether the numbers are sane; reach for SysId when you want them properly fitted.
 3. **Spin Step Response** and **Turn Step Response**, for the two kP values. Drive kP should only be
    closing a small gap; if it has to be large to reach the setpoint at all, the feedforward is wrong
    — go back to step 2 rather than fighting it with kP. Tune turn kP with weight on the wheels, not
