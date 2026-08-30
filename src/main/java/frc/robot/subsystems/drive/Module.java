@@ -100,6 +100,16 @@ public class Module {
     io.setTurnPosition(Rotation2d.kZero);
   }
 
+  /**
+   * Applies an open-loop drive voltage without touching the turn controller, so the caller can hold
+   * the module at an angle of its choosing. Used by the spin characterization.
+   *
+   * @param volts voltage to apply to the drive motor
+   */
+  public void runCharacterizationDriveOnly(double volts) {
+    io.setDriveOpenLoop(volts);
+  }
+
   /** Stops both motors. */
   public void stop() {
     io.setDriveOpenLoop(0.0);

@@ -159,13 +159,49 @@ selected and run without a controller binding) whenever `Constants.TUNING_MODE` 
 all log to the `Tuning/` table — read the result from the plot in AdvantageScope, not from a number
 on the dashboard.
 
-| Routine | Measures | Space needed |
-| --- | --- | --- |
-| Report Encoder Offsets | absolute encoder offsets | none — runs disabled |
-| Turn Step Response | turn kP / kD | none — modules steer, wheels held still |
-| Drive Step Response | drive kP | ~0.5 m per cycle, **open-ended** |
-| Measure Wheel Radius | true wheel radius / gear ratio | ~1.0 m, then stops |
-| Drive SysId (all four) | drive kS / kV / kA, and a recommended kP | ~2.5 m per run, both directions |
+| Routine | Measures | Space needed | On blocks? |
+| --- | --- | --- | --- |
+| Report Encoder Offsets | absolute encoder offsets | none — runs disabled | **yes** |
+| Turn Step Response | turn kP / kD | none — wheels held still | floor |
+| Spin Step Response | drive kP | ~1 m around the robot | floor |
+| Drive Step Response | drive kP | ~0.5 m per cycle, **open-ended** | floor |
+| Measure Wheel Radius | true wheel radius / gear ratio | ~1.0 m, then stops | **no** |
+| Spin SysId (all four) | drive kS / kV | ~1 m around the robot | floor |
+| Drive SysId (all four) | drive kS / kV / kA | ~2.5 m per run, both ways | floor |
+
+### Spin instead of straight line
+
+Both driving tests have a spin variant that points the modules tangentially so the robot rotates on
+the spot. **Prefer these.** They measure the same thing in about a metre of clearance instead of
+three metres of runway, and the spin step response never leaves the robot's own footprint however
+long you leave it running — unlike the straight-line version, which is open-ended.
+
+kS and kV transfer exactly: both are per-wheel properties, and a wheel does the same work following
+a circle as following a line. The only quantity that does not transfer is kA, which in a spin
+reflects the robot's rotational inertia rather than its mass — for this robot roughly 0.6–0.7× the
+straight-line value, depending on where the mass sits. **That does not matter here:** the drive
+feedforward is `kS·sign(v) + kV·v`, with no kA term anywhere in the control path. Run the
+straight-line SysId only if you later add something that needs kA.
+
+Each spin SysId run is about 1.75 rotations. `SpinGeometryTest` checks that the tangent angles
+really do produce a pure rotation, so a sign error there fails the build rather than quietly
+smearing translation into the results.
+
+### What can be done on blocks
+
+Only **Report Encoder Offsets** is genuinely a blocks job — it is also the easiest place to sight the
+wheels straight, and it runs while disabled.
+
+Everything else wants weight on the wheels:
+
+- **Turn kP on blocks will be under-tuned.** Steering friction with the robot's weight on the wheels
+  is a real load; gains that look crisp with the wheels hanging will be sluggish on the floor.
+- **Drive kP and SysId on blocks measure an unloaded drivetrain.** kV survives reasonably, kS comes
+  out low because there is no weight-dependent friction, and kA is meaningless with the robot's mass
+  absent. Use the spin variants on the floor instead — they cost about as little space as blocks do
+  and keep the load real.
+- **Measure Wheel Radius cannot be done on blocks at all.** It works by comparing believed distance
+  against a tape measure, and on blocks there is no distance.
 
 ### How much floor space
 

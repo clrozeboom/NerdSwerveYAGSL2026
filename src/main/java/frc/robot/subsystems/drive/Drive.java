@@ -169,6 +169,51 @@ public class Drive extends SubsystemBase {
   }
 
   /**
+   * Runs every drive motor open-loop with the modules pointed tangentially, so the robot spins in
+   * place instead of driving in a straight line.
+   *
+   * <p>Same electrical test as {@link #runCharacterization(double)}, but it fits in the robot's own
+   * footprint. Each wheel still travels a real distance against the robot's inertia, so the wheel
+   * velocity SysId reads is just as valid — the wheels are simply following a circle rather than a
+   * line.
+   *
+   * @param volts voltage to apply to every drive motor
+   */
+  public void runCharacterizationSpin(double volts) {
+    for (int i = 0; i < modules.length; i++) {
+      modules[i].runTurnSetpoint(tangentAngle(i));
+      modules[i].runCharacterizationDriveOnly(volts);
+    }
+  }
+
+  /**
+   * The heading that points a module along its circle about robot centre — its position angle turned
+   * a quarter turn. Driving all four at this angle spins the robot counter-clockwise.
+   */
+  static Rotation2d tangentAngle(int moduleIndex) {
+    return Constants.Drivebase.MODULE_TRANSLATIONS[moduleIndex]
+        .getAngle()
+        .plus(Rotation2d.kCCW_Pi_2);
+  }
+
+  /**
+   * Commands one wheel speed to all four modules with the modules pointed tangentially, spinning the
+   * robot in place. The spin step response uses this to tune drive kP in a small space.
+   *
+   * @param velocityRadPerSec wheel speed, in radians per second
+   */
+  public void runSpinSetpoint(double velocityRadPerSec) {
+    for (int i = 0; i < modules.length; i++) {
+      modules[i].runTurnSetpoint(tangentAngle(i));
+      modules[i].runDriveSetpoint(velocityRadPerSec);
+    }
+    Logger.recordOutput("Tuning/SpinSetpointRadPerSec", velocityRadPerSec);
+    Logger.recordOutput(
+        "Tuning/SpinSetpointRobotRadPerSec",
+        velocityRadPerSec * Constants.Module.WHEEL_RADIUS / Constants.Drivebase.DRIVE_BASE_RADIUS);
+  }
+
+  /**
    * Points all four modules at one angle without moving the wheels. The turn step-response test uses
    * this: step the angle, then watch setpoint against measured to judge turn kP.
    *

@@ -101,8 +101,10 @@ public class RobotContainer {
     if (Constants.TUNING_MODE) {
       autoChooser.addOption("Tuning: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
       autoChooser.addOption("Tuning: Turn Step Response", TuningCommands.turnStepResponse(drive));
+      autoChooser.addOption("Tuning: Spin Step Response", TuningCommands.spinStepResponse(drive));
       autoChooser.addOption("Tuning: Drive Step Response", TuningCommands.driveStepResponse(drive));
       autoChooser.addOption("Tuning: Measure Wheel Radius", TuningCommands.measureWheelRadius(drive));
+      autoChooser.addOption("Tuning: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
       autoChooser.addOption("Tuning: Drive SysId (all four)", TuningCommands.driveSysIdFull(drive));
     }
 

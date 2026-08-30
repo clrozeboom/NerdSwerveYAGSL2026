@@ -101,6 +101,38 @@ public final class TuningCommands {
   }
 
   /**
+   * Drive kP step response run as a spin rather than a straight line.
+   *
+   * <p>Identical to {@link #driveStepResponse(Drive)} in what it measures — the drive controllers see
+   * the same velocity setpoints and the same load — but the robot rotates on the spot instead of
+   * travelling, so it never leaves its own footprint no matter how long you leave it running. This
+   * is the one to use in a small space, and the one to prefer generally since the straight-line
+   * version is open-ended.
+   *
+   * @param drive the drivetrain
+   * @return a command that steps until interrupted
+   */
+  public static Command spinStepResponse(Drive drive) {
+    TunableNumber stepRadPerSec = new TunableNumber("Tuning/Drive/StepRadPerSec", 10.0);
+    TunableNumber periodSecs = new TunableNumber("Tuning/Drive/StepPeriodSecs", 2.0);
+    Timer timer = new Timer();
+
+    return Commands.runEnd(
+            () -> {
+              boolean high = (long) (timer.get() / periodSecs.get()) % 2 == 0;
+              drive.runSpinSetpoint(high ? stepRadPerSec.get() : 0.0);
+              Logger.recordOutput(
+                  "Tuning/DriveMeasuredRadPerSec", drive.getAverageWheelVelocityRadPerSec());
+            },
+            () -> {
+              drive.stop();
+              timer.stop();
+            },
+            drive)
+        .beforeStarting(timer::restart);
+  }
+
+  /**
    * Reports the absolute encoder offsets needed to make the current physical module positions read
    * as zero.
    *
@@ -226,6 +258,29 @@ public final class TuningCommands {
    * @return the routine; call {@code quasistatic}/{@code dynamic} on it for the four test commands
    */
   public static SysIdRoutine driveSysIdRoutine(Drive drive) {
+    return sysIdRoutine(drive, drive::runCharacterization, "Straight");
+  }
+
+  /**
+   * The same routine with the modules pointed tangentially, so the robot spins in place.
+   *
+   * <p>This measures kS and kV exactly as well as the straight-line version — both are per-wheel
+   * properties, and the wheels do the same work whether they follow a line or a circle — while
+   * fitting in about a metre instead of three each way.
+   *
+   * <p>The one quantity it does not transfer is kA, which in a spin reflects the robot's rotational
+   * inertia rather than its mass. That does not matter here: the drive feedforward is
+   * {@code kS·sign(v) + kV·v}, with no kA term anywhere in the control path.
+   *
+   * @param drive the drivetrain
+   * @return the routine
+   */
+  public static SysIdRoutine spinSysIdRoutine(Drive drive) {
+    return sysIdRoutine(drive, drive::runCharacterizationSpin, "Spin");
+  }
+
+  private static SysIdRoutine sysIdRoutine(
+      Drive drive, java.util.function.DoubleConsumer output, String name) {
     return new SysIdRoutine(
         new SysIdRoutine.Config(
             Units.Volts.per(Units.Second).of(Constants.SysId.RAMP_RATE_VOLTS_PER_SEC),
@@ -233,7 +288,7 @@ public final class TuningCommands {
             Units.Seconds.of(Constants.SysId.QUASISTATIC_TIMEOUT_SECS),
             state -> Logger.recordOutput("Tuning/SysIdState", state.toString())),
         new SysIdRoutine.Mechanism(
-            voltage -> drive.runCharacterization(voltage.in(Units.Volts)), null, drive));
+            voltage -> output.accept(voltage.in(Units.Volts)), null, drive, "Drive" + name));
   }
 
   /**
@@ -278,11 +333,27 @@ public final class TuningCommands {
    * @return a command running all four tests in sequence
    */
   public static Command driveSysIdFull(Drive drive) {
-    SysIdRoutine routine = driveSysIdRoutine(drive);
+    return sysIdFull(driveSysIdRoutine(drive), false);
+  }
+
+  /**
+   * The four SysId tests run as spins rather than straight lines.
+   *
+   * <p><b>The robot will spin in place</b>, roughly one and three-quarter turns per run, alternating
+   * direction. It needs about a metre of clear floor around it rather than three metres of runway.
+   *
+   * @param drive the drivetrain
+   * @return a command running all four tests in sequence
+   */
+  public static Command spinSysIdFull(Drive drive) {
+    return sysIdFull(spinSysIdRoutine(drive), true);
+  }
+
+  private static Command sysIdFull(SysIdRoutine routine, boolean spin) {
     return Commands.sequence(
         Commands.runOnce(
             () -> {
-              System.out.println("=== Drive SysId ===");
+              System.out.println(spin ? "=== Drive SysId (spin) ===" : "=== Drive SysId ===");
               System.out.printf(
                   "  quasistatic: %.1f V/s for %.1fs -> peak %.2f V, %.2f m/s, about %.1f m each%n",
                   Constants.SysId.RAMP_RATE_VOLTS_PER_SEC,
@@ -299,10 +370,18 @@ public final class TuningCommands {
                   Constants.SysId.DYNAMIC_TIMEOUT_SECS,
                   predictedSpeed(Constants.SysId.STEP_VOLTS),
                   dynamicDistance());
-              System.out.printf(
-                  "  Longest single run is about %.1f m. The robot returns toward its start between%n"
-                      + "  forward and reverse pairs, so clear roughly that much in each direction.%n",
-                  Math.max(quasistaticDistance(), dynamicDistance()));
+              double longest = Math.max(quasistaticDistance(), dynamicDistance());
+              if (spin) {
+                System.out.printf(
+                    "  Spinning: %.2f rotations for the longest run. Clear about a metre around the%n"
+                        + "  robot; it stays over its own footprint.%n",
+                    longest / (2 * Math.PI * Constants.Drivebase.DRIVE_BASE_RADIUS));
+              } else {
+                System.out.printf(
+                    "  Longest single run is about %.1f m. The robot returns toward its start between%n"
+                        + "  forward and reverse pairs, so clear roughly that much in each direction.%n",
+                    longest);
+              }
             }),
         routine.quasistatic(SysIdRoutine.Direction.kForward),
         Commands.waitSeconds(1.0),
