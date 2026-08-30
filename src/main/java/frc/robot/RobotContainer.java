@@ -56,21 +56,26 @@ public class RobotContainer {
   }
 
   private void configureBindings() {
-    // Field-relative driving on the sticks. Left stick translates, right stick turns. Joystick axes
+    // Robot-relative driving on the sticks. Left stick translates, right stick turns. Joystick axes
     // are negated because pushing a stick forward or left reads negative.
+    //
+    // This is the default rather than field-relative because there is no gyro on this robot. With
+    // heading coming only from integrated module positions it drifts, and a drifting heading makes
+    // field-relative driving progressively wrong in a way that is confusing to drive. Robot-relative
+    // ignores heading entirely, so it stays correct indefinitely.
     drive.setDefaultCommand(
-        DriveCommands.joystickDrive(
+        DriveCommands.robotRelativeDrive(
             drive,
             () -> -driver.getLeftY(),
             () -> -driver.getLeftX(),
             () -> -driver.getRightX()));
 
-    // Hold the left bumper to drive robot-relative instead, which is what you want whenever the
-    // heading estimate is not trustworthy — including any time there is no gyro.
+    // Hold the left bumper for field-relative. Only useful once a gyro is fitted; until then the
+    // heading it works from is the drifting wheel-derived estimate.
     driver
         .leftBumper()
         .whileTrue(
-            DriveCommands.robotRelativeDrive(
+            DriveCommands.joystickDrive(
                 drive,
                 () -> -driver.getLeftY(),
                 () -> -driver.getLeftX(),

@@ -4,6 +4,7 @@
 
 package frc.robot.subsystems.drive;
 
+import org.littletonrobotics.junction.AutoLog;
 import org.wpilib.math.geometry.Rotation2d;
 
 /**
@@ -15,13 +16,14 @@ import org.wpilib.math.geometry.Rotation2d;
  * same control code runs against real SPARK MAXes ({@link ModuleIOSpark}) and against the physics
  * sim ({@link ModuleIOSim}) without changing.
  *
- * <p>{@code ModuleIOInputs} is deliberately a flat struct of primitives and value types. If this
- * project later takes on the AdvantageKit dependency, annotating it {@code @AutoLog} is all that is
- * needed to get replay logging; nothing else here has to change.
+ * <p>{@code ModuleIOInputs} is a flat struct of primitives and value types carrying {@code @AutoLog},
+ * so AdvantageKit's processor generates {@code ModuleIOInputsAutoLogged} with the serialization
+ * needed to write these values to a log and read them back during replay.
  */
 public interface ModuleIO {
 
   /** Everything read from one module's hardware in a single loop. */
+  @AutoLog
   class ModuleIOInputs {
     /** True when the drive controller answered this cycle. */
     public boolean driveConnected = false;

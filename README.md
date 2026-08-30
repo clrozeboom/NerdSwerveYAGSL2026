@@ -1,7 +1,7 @@
 # NerdSwerve 2027 — Custom Swerve
 
 Team 5010's swerve drivetrain, written from scratch against **WPILib 2027.0.0-alpha-6** using the
-**Commands v2** framework, structured the way an AdvantageKit swerve project is structured.
+**Commands v2** framework and **AdvantageKit** for logging and deterministic replay.
 
 This replaces the YAGSL-based 2026 project. Every drivetrain number here — CAN IDs, gear ratios,
 encoder offsets, current limits, module positions, feedforward gains — was carried over from that
@@ -26,7 +26,8 @@ alpha-7 is the newest WPILib 2027 alpha, but alpha-6 is the better place to buil
 
 The cost is that alpha-6's WPILib jars are **not** on the public frcmaven mirror — only alpha-7 is.
 They come from the local WPILib 2027 alpha-6 installer, which `settings.gradle` points at via
-`wpilibYear = '2027_alpha6'`. Everyone building this needs that installer.
+`wpilibYear = '2027_alpha5'` (alpha-6 keeps the `alpha5` directory name). Everyone building this
+needs that installer; it also supplies the JDK 25 the build requires.
 
 ### Migrating to alpha-7 later
 
@@ -42,14 +43,12 @@ The changes this project would need, all mechanical:
 | `org.wpilib.driverstation.Alert` | `org.wpilib.util.Alert` |
 | `org.wpilib.math.util.Pair` | `org.wpilib.util.Pair` |
 
-`SmartDashboard` is only touched in two places — `util/Telem.java` and the chooser/field wiring in
-`Drive` and `RobotContainer` — which is why `Telem` exists at all.
+`SmartDashboard` is only touched in two places now that AdvantageKit's `Logger` carries the
+telemetry: the `Field2d` publish in `Drive` and the auto chooser in `RobotContainer`.
 
 ---
 
 ## Structure
-
-The AdvantageKit pattern, without the AdvantageKit dependency:
 
 ```
 subsystems/drive/
@@ -59,38 +58,58 @@ subsystems/drive/
   ModuleIOSim.java       physics sim
   ModuleIOSpark.java     SPARK MAX + NEO + Thrifty analog encoder
   GyroIO.java          gyro interface + GyroIOInputs struct
-  GyroIONone.java        no gyro (current default)
+  GyroIONone.java        no gyro (the default — none planned)
   GyroIOOnboard.java     SystemCore's built-in IMU
 commands/DriveCommands.java   command factories
-util/Telem.java               telemetry facade
 ```
 
 Every loop reads all hardware into the `*Inputs` structs first, then runs control off that one
-snapshot. That is the property that makes replay possible and that keeps sim and real behaviour
-identical.
+snapshot, and `Logger.processInputs` is what makes that snapshot replayable — writing it to the log
+when running, and substituting the logged values when replaying.
 
-**AdvantageKit itself is deliberately not a dependency.** The request was for code that works the way
-AdvantageKit swerve code works, and the structure above delivers that: hardware swapped by
-constructor argument, logic testable without a robot, sim and real sharing one control path. Taking
-the actual dependency would add a vendordep that is itself built for alpha-5, plus the `gversion`
-build plumbing. The `*Inputs` classes are plain structs of primitives, so if you do want real replay
-logging later, annotating them `@AutoLog` and swapping `Telem` for `Logger` is the whole job.
+### Replay
+
+AdvantageKit 27.0.0-alpha-4 is a dependency, and **replay has been verified working end to end** on
+this project: a simulation run wrote a 245 KB `.wpilog`, that log was replayed back through the same
+control code, and the resulting log carries a `ReplayOutputs` table recomputed from the logged
+inputs alongside the original `RealOutputs`.
+
+To replay a log:
+
+1. Copy a `.wpilog` off the robot (or set `LOG_IN_SIM = true` in `Robot.java` to capture one from a
+   sim run).
+2. Set `REPLAY_LOG` in `Robot.java` to its path.
+3. Run the simulator. Every `updateInputs` call is fed from the log instead of from hardware, the
+   control code re-executes against exactly the inputs it saw, and a `*_replay.wpilog` lands beside
+   the original.
+4. Open both in AdvantageScope and compare `RealOutputs` against `ReplayOutputs`.
+
+Two things AdvantageKit needs that the vendordep does not bring on its own, both already wired up
+here: the `@AutoLog` annotation processor is a separate artifact
+(`org.littletonrobotics.akit:akit-autolog`, added explicitly in `build.gradle` with its version
+pinned to the vendordep's), and `Robot` must extend `LoggedRobot` rather than `TimedRobot` so the
+loop is driven by the log during replay instead of by the system clock.
 
 ---
 
-## Gyro
+## No gyro — and why the default is robot-relative
 
-There is no gyro wired up. `RobotContainer` constructs `GyroIONone`, and `Drive` handles that by
-integrating module positions to track heading — field-relative driving works, it just drifts.
+There is no gyro on this robot and none planned, so **robot-relative driving is the default**.
 
-The YAGSL config used a NavX, which has no 2027 release and which SystemCore could not talk to
-anyway now that SPI is removed. The replacement is already written: **`GyroIOOnboard`** uses
-SystemCore's built-in IMU. To switch, change one line in `RobotContainer` and confirm the mount
-orientation — `MountOrientation.FLAT` assumes the SystemCore is mounted horizontally. Note that
-`GyroIOOnboard` reads the raw Z gyro rate, which is only the robot's yaw rate when mounted `FLAT`.
+`RobotContainer` constructs `GyroIONone`. `Drive` handles that by integrating module positions to
+track heading, which works but drifts, and a drifting heading makes field-relative driving
+progressively wrong in a way that is confusing to drive. Robot-relative ignores heading entirely, so
+it stays correct indefinitely. Field-relative is still there on the left bumper, and becomes the
+sensible default the moment a gyro is fitted.
 
-Hold **left bumper** to drive robot-relative, which is what you want whenever the heading estimate
-is not trustworthy.
+Heading is still tracked and logged, and the pose estimate still runs — they are just not trusted
+for driving.
+
+If a gyro is ever wanted, **`GyroIOOnboard`** is already written and uses SystemCore's built-in IMU
+(no NavX needed, which matters because NavX has no 2027 release and SystemCore dropped SPI). Switch
+one line in `RobotContainer`, confirm the mount orientation, and swap the two bindings back. Note
+that `GyroIOOnboard` reads the raw Z gyro rate, which is only the robot's yaw rate when the
+SystemCore is mounted `FLAT`.
 
 ---
 
@@ -98,9 +117,9 @@ is not trustworthy.
 
 | Control | Action |
 | --- | --- |
-| Left stick | Translate (field-relative) |
+| Left stick | Translate (robot-relative) |
 | Right stick X | Rotate |
-| Left bumper (hold) | Drive robot-relative instead |
+| Left bumper (hold) | Field-relative instead (needs a gyro to be useful) |
 | East face button (B) | Hold modules in an X |
 | Start | Zero heading |
 
@@ -146,16 +165,13 @@ gearing or wheel change.
 
 ## Verification status
 
-This code has **not been compiled.** WPILib 2027 targets Java 25 and its jars are Java 25 class
-files; no JDK 25 was available in the environment where this was written, and alpha-6's jars are not
-on the public mirror. Instead, every WPILib class and method it calls was checked individually
-against the alpha-6 sources at tag `v2027.0.0-alpha-6` and the alpha-7 jars. That caught real
-differences — `MathUtil.clamp` and `LinearSystemId` are both gone in 2027, and `AnalogEncoder` has
-no `isConnected()` — but it is not a substitute for a build.
+**This builds and runs.** `./gradlew build` succeeds against the real WPILib 2027 alpha-6 toolchain,
+the robot program starts and loops in simulation, and an AdvantageKit replay round-trip has been
+exercised end to end.
 
-`ModuleIOSpark` is the least verified file: `maven.revrobotics.com` was unreachable, so its REVLib
-calls follow the 2025/2026 API from memory of that API's shape rather than from the alpha-6 jar. If
-anything there fails to resolve, it is contained to that one file — everything else talks to
-`ModuleIO`.
+What has *not* been done: nothing has touched real hardware. `ModuleIOSpark` compiles against REVLib
+2027.0.0-alpha-6 and every call resolves, but no SPARK MAX has answered any of them. Expect the
+usual first-bringup work — encoder directions, absolute offsets, and the PID gains that did not
+transfer from YAGSL.
 
-**Build it first.** `./gradlew build`, then `./gradlew simulateJava` to drive it in the simulator.
+`./gradlew build`, then `./gradlew simulateJava` to drive it in the simulator.

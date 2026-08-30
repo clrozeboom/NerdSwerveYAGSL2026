@@ -10,6 +10,7 @@ java {
 }
 
 def ROBOT_MAIN_CLASS = "frc.robot.Main"
+def akitVersion = "27.0.0-alpha-4"
 
 // Define my targets (SystemCore) and artifacts (deployable files)
 // This is added by GradleRIO's backing project DeployUtils.
@@ -60,6 +61,10 @@ dependencies {
     annotationProcessor wpi.java.deps.wpilibAnnotations()
     implementation wpi.java.deps.wpilib()
     implementation wpi.java.vendor.java()
+
+    // AdvantageKit's @AutoLog processor is not part of the vendordep; it has to be requested
+    // explicitly, and its version must track the AdvantageKit vendordep version.
+    annotationProcessor "org.littletonrobotics.akit:akit-autolog:$akitVersion"
 
     systemcoreDebug wpi.java.deps.wpilibJniDebug(wpi.platforms.systemcore)
     systemcoreDebug wpi.java.vendor.jniDebug(wpi.platforms.systemcore)

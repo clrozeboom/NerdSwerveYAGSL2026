@@ -5,8 +5,7 @@
 package frc.robot.subsystems.drive;
 
 import frc.robot.Constants;
-import frc.robot.subsystems.drive.ModuleIO.ModuleIOInputs;
-import frc.robot.util.Telem;
+import org.littletonrobotics.junction.Logger;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.kinematics.SwerveModulePosition;
 import org.wpilib.math.kinematics.SwerveModuleVelocity;
@@ -20,7 +19,7 @@ import org.wpilib.math.kinematics.SwerveModuleVelocity;
  */
 public class Module {
   private final ModuleIO io;
-  private final ModuleIOInputs inputs = new ModuleIOInputs();
+  private final ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();
   private final String name;
 
   public Module(ModuleIO io, String name) {
@@ -34,16 +33,13 @@ public class Module {
    */
   public void updateInputs() {
     io.updateInputs(inputs);
-    Telem.log("Drive/" + name + "/DriveConnected", inputs.driveConnected);
-    Telem.log("Drive/" + name + "/DrivePositionMeters", getPositionMeters());
-    Telem.log("Drive/" + name + "/DriveVelocityMetersPerSec", getVelocityMetersPerSec());
-    Telem.log("Drive/" + name + "/DriveAppliedVolts", inputs.driveAppliedVolts);
-    Telem.log("Drive/" + name + "/DriveCurrentAmps", inputs.driveCurrentAmps);
-    Telem.log("Drive/" + name + "/TurnConnected", inputs.turnConnected);
-    Telem.log("Drive/" + name + "/TurnEncoderConnected", inputs.turnEncoderConnected);
-    Telem.log("Drive/" + name + "/TurnAbsolutePositionDeg", inputs.turnAbsolutePosition.getDegrees());
-    Telem.log("Drive/" + name + "/TurnPositionDeg", getAngle().getDegrees());
-    Telem.log("Drive/" + name + "/TurnCurrentAmps", inputs.turnCurrentAmps);
+    // Logger.processInputs writes these values to the log when running, and replaces them with the
+    // logged values when replaying. That single call is what makes replay work.
+    Logger.processInputs("Drive/" + name, inputs);
+
+    Logger.recordOutput("Drive/" + name + "/DrivePositionMeters", getPositionMeters());
+    Logger.recordOutput("Drive/" + name + "/DriveVelocityMetersPerSec", getVelocityMetersPerSec());
+    Logger.recordOutput("Drive/" + name + "/TurnPositionDeg", getAngle().getDegrees());
   }
 
   /**

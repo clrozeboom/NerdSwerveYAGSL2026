@@ -4,6 +4,7 @@
 
 package frc.robot.subsystems.drive;
 
+import org.littletonrobotics.junction.AutoLog;
 import org.wpilib.math.geometry.Rotation2d;
 
 /**
@@ -18,6 +19,7 @@ import org.wpilib.math.geometry.Rotation2d;
 public interface GyroIO {
 
   /** Everything read from the gyro in a single loop. */
+  @AutoLog
   class GyroIOInputs {
     /** True when the gyro is present and returning usable data. */
     public boolean connected = false;

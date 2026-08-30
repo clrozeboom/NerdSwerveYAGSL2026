@@ -5,8 +5,7 @@
 package frc.robot.subsystems.drive;
 
 import frc.robot.Constants;
-import frc.robot.subsystems.drive.GyroIO.GyroIOInputs;
-import frc.robot.util.Telem;
+import org.littletonrobotics.junction.Logger;
 import org.wpilib.command2.SubsystemBase;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
@@ -36,7 +35,7 @@ public class Drive extends SubsystemBase {
   private static final double LOOP_PERIOD_SECS = 0.02;
 
   private final GyroIO gyroIO;
-  private final GyroIOInputs gyroInputs = new GyroIOInputs();
+  private final GyroIOInputsAutoLogged gyroInputs = new GyroIOInputsAutoLogged();
   private final Module[] modules = new Module[4];
 
   private final SwerveDriveKinematics kinematics =
@@ -76,20 +75,21 @@ public class Drive extends SubsystemBase {
     // the property that makes AdvantageKit-style replay possible, and it is worth keeping even
     // without the library.
     gyroIO.updateInputs(gyroInputs);
+    Logger.processInputs("Drive/Gyro", gyroInputs);
     for (Module module : modules) {
       module.updateInputs();
     }
 
     updateOdometry();
 
-    Telem.log("Drive/GyroConnected", gyroInputs.connected);
-    Telem.log("Drive/HeadingDeg", getRotation().getDegrees());
-    Telem.log("Drive/PoseX", pose.getX());
-    Telem.log("Drive/PoseY", pose.getY());
+    Logger.recordOutput("Drive/GyroConnected", gyroInputs.connected);
+    Logger.recordOutput("Drive/HeadingDeg", getRotation().getDegrees());
+    Logger.recordOutput("Drive/PoseX", pose.getX());
+    Logger.recordOutput("Drive/PoseY", pose.getY());
     ChassisVelocities measured = getChassisVelocities();
-    Telem.log("Drive/MeasuredVx", measured.vx);
-    Telem.log("Drive/MeasuredVy", measured.vy);
-    Telem.log("Drive/MeasuredOmega", measured.omega);
+    Logger.recordOutput("Drive/MeasuredVx", measured.vx);
+    Logger.recordOutput("Drive/MeasuredVy", measured.vy);
+    Logger.recordOutput("Drive/MeasuredOmega", measured.omega);
     field.setRobotPose(pose);
   }
 
@@ -140,9 +140,9 @@ public class Drive extends SubsystemBase {
       modules[i].runSetpoint(setpoints[i]);
     }
 
-    Telem.log("Drive/SetpointVx", discretized.vx);
-    Telem.log("Drive/SetpointVy", discretized.vy);
-    Telem.log("Drive/SetpointOmega", discretized.omega);
+    Logger.recordOutput("Drive/SetpointVx", discretized.vx);
+    Logger.recordOutput("Drive/SetpointVy", discretized.vy);
+    Logger.recordOutput("Drive/SetpointOmega", discretized.omega);
   }
 
   /** Stops all four modules where they are. */
