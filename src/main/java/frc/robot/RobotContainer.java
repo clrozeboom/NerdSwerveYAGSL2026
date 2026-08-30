@@ -99,13 +99,15 @@ public class RobotContainer {
     // be picked and run without a controller binding; see TuningCommands for what each one measures
     // and which of them move the robot.
     if (Constants.TUNING_MODE) {
-      autoChooser.addOption("Tuning: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
-      autoChooser.addOption("Tuning: Turn Step Response", TuningCommands.turnStepResponse(drive));
-      autoChooser.addOption("Tuning: Spin Step Response", TuningCommands.spinStepResponse(drive));
-      autoChooser.addOption("Tuning: Drive Step Response", TuningCommands.driveStepResponse(drive));
-      autoChooser.addOption("Tuning: Measure Wheel Radius", TuningCommands.measureWheelRadius(drive));
-      autoChooser.addOption("Tuning: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
-      autoChooser.addOption("Tuning: Drive SysId (all four)", TuningCommands.driveSysIdFull(drive));
+      // Listed in the order the README's bring-up sequence works through them: everything that
+      // fits in a metre of clearance first, then the two that need a runway.
+      autoChooser.addOption("Tuning 1: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
+      autoChooser.addOption("Tuning 2: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
+      autoChooser.addOption("Tuning 3: Spin Step Response", TuningCommands.spinStepResponse(drive));
+      autoChooser.addOption("Tuning 3: Turn Step Response", TuningCommands.turnStepResponse(drive));
+      autoChooser.addOption("Tuning 4: Measure Wheel Radius", TuningCommands.measureWheelRadius(drive));
+      autoChooser.addOption("Tuning (opt): Drive Step Response", TuningCommands.driveStepResponse(drive));
+      autoChooser.addOption("Tuning (opt): Drive SysId (all four)", TuningCommands.driveSysIdFull(drive));
     }
 
     SmartDashboard.putData("Auto Chooser", autoChooser);

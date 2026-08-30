@@ -155,8 +155,8 @@ Every one of these has a bring-up routine that measures it — see below.
 
 Several numbers above are inherited rather than measured, so the project ships routines that turn
 each of them into a measurement. They appear on the **auto chooser** (the one place a command can be
-selected and run without a controller binding) whenever `Constants.TUNING_MODE` is true, and they
-all log to the `Tuning/` table — read the result from the plot in AdvantageScope, not from a number
+selected and run without a controller binding) whenever `Constants.TUNING_MODE` is true, numbered in
+the order of the bring-up sequence below, and they all log to the `Tuning/` table — read the result from the plot in AdvantageScope, not from a number
 on the dashboard.
 
 | Routine | Measures | Space needed | On blocks? |
@@ -246,19 +246,33 @@ in today.
 
 ### Suggested order
 
-1. **Report Encoder Offsets** first. The offsets in `Constants` came from YAGSL, which read the
-   Thrifty encoders through its own conversion; there is no reason to expect them to transfer. Point
-   all four wheels forward by hand, run it disabled, copy the four printed numbers into
-   `Constants.ModuleConfig`.
-2. **Measure Wheel Radius**, because a wrong radius or gear ratio makes every distance the robot
-   believes wrong by the same factor — including odometry.
-3. **Drive SysId**, for kS/kV/kA in the correct units. Only meaningful once step 2 is settled.
-   Note that WPILib's stock SysId config would need ~43 m on this drivetrain — the inherited 1.36:1
-   gearing implies roughly 11 m/s free speed — so `Constants.SysId` overrides it to fit a practice
-   space. Revisit those numbers once the real gearing is known.
-4. **Step responses**, for the two kP values. Drive kP should only be closing a small gap; if it has
-   to be large to reach the setpoint at all, the feedforward is wrong — go back to step 3 rather
-   than fighting it with kP.
+The first three steps need only about a metre of clear floor around the robot, so all of the gain
+tuning can happen in a corner of the shop. Only step 4 needs a runway, and it can wait until you
+have one.
+
+1. **Report Encoder Offsets.** Point all four wheels forward by hand and run it disabled — blocks are
+   the easiest place to sight them straight. The offsets in `Constants` came from YAGSL, which read
+   the Thrifty encoders through its own conversion, so there is no reason to expect them to transfer.
+   Copy the four printed numbers into `Constants.ModuleConfig` and redeploy. Nothing below means much
+   until this is right.
+2. **Spin SysId**, for kS and kV in the correct units. About 1.75 rotations per run, four runs. These
+   are the gains the drive feedforward actually uses, and the spin measures them exactly as well as a
+   straight line would.
+3. **Spin Step Response** and **Turn Step Response**, for the two kP values. Drive kP should only be
+   closing a small gap; if it has to be large to reach the setpoint at all, the feedforward is wrong
+   — go back to step 2 rather than fighting it with kP. Tune turn kP with weight on the wheels, not
+   on blocks: steering friction under load is a real part of what the controller is fighting.
+4. **Measure Wheel Radius**, once you have a few metres. A wrong radius or gear ratio makes every
+   distance the robot believes wrong by the same factor, so this matters for odometry and for any
+   path following added later — but it does not affect steering or velocity control, so it can wait
+   for a bigger space. Give it 3 m the first time: it stops on *believed* distance, so a larger wheel
+   than configured overshoots.
+
+Optional, and only if something later needs kA: **Drive SysId** (the straight-line version) measures
+it properly, at the cost of ~2.5 m each way. The current control path has no kA term, so this is not
+part of normal bring-up. Note that WPILib's stock SysId config would need ~43 m on this drivetrain —
+the inherited 1.36:1 gearing implies roughly 11 m/s free speed — which is why `Constants.SysId`
+overrides it. Revisit those numbers once step 4 has established the real gearing.
 
 ---
 
