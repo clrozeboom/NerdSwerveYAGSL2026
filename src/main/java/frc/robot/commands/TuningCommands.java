@@ -12,6 +12,7 @@ import org.littletonrobotics.junction.Logger;
 import org.wpilib.command2.Command;
 import org.wpilib.command2.Commands;
 import org.wpilib.command2.sysid.SysIdRoutine;
+import org.wpilib.driverstation.RobotState;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.system.Timer;
 import org.wpilib.units.Units;
@@ -188,6 +189,38 @@ public final class TuningCommands {
             drive)
         .beforeStarting(timer::restart)
         .until(() -> timer.get() >= Constants.SysId.QUASISTATIC_TIMEOUT_SECS);
+  }
+
+  /**
+   * Declares the wheels to be pointing straight forward, zeroing every turn encoder there.
+   *
+   * <p>This is how the modules find themselves on a robot without absolute encoders. Straighten all
+   * four wheels by hand — a straight edge along each side of the chassis is the usual way — then run
+   * this. Nothing moves; it only changes what the modules believe.
+   *
+   * <p>Only acts while the robot is disabled. Re-zeroing mid-match would tell every module it is
+   * pointing forward when it is not, and the robot would drive off in whatever direction the wheels
+   * happened to be sitting.
+   *
+   * <p>Expect to need this often. The steering coasts once the brake timer expires after disable, so
+   * pushing the robot around is usually enough to lose alignment.
+   *
+   * @param drive the drivetrain
+   * @return a command that zeroes once and ends
+   */
+  public static Command zeroModules(Drive drive) {
+    return Commands.runOnce(
+            () -> {
+              if (!RobotState.isDisabled()) {
+                System.out.println("Zero Modules ignored: only runs while disabled.");
+                return;
+              }
+              drive.zeroModules();
+              System.out.println(
+                  "=== Modules zeroed. All four now read 0 deg; make sure they were straight. ===");
+            })
+        // No motion, and the wheels have to be positioned by hand, so let it run disabled.
+        .ignoringDisable(true);
   }
 
   /**

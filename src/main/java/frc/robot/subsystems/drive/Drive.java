@@ -16,6 +16,7 @@ import org.wpilib.math.kinematics.SwerveModulePosition;
 import org.wpilib.math.kinematics.SwerveModuleVelocity;
 import org.wpilib.smartdashboard.Field2d;
 import org.wpilib.smartdashboard.SmartDashboard;
+import org.wpilib.system.Timer;
 
 /**
  * Four-module swerve drivetrain.
@@ -266,6 +267,20 @@ public class Drive extends SubsystemBase {
       sum += module.getWheelRadiansForCharacterization();
     }
     return sum / modules.length;
+  }
+
+  /**
+   * Declares that all four modules are currently pointing straight forward.
+   *
+   * <p>This is the manual stand-in for absolute encoders: straighten the wheels by hand, call this,
+   * and every module's heading is correct again. Nothing moves — it only changes what the modules
+   * believe about where they already are.
+   */
+  public void zeroModules() {
+    for (Module module : modules) {
+      module.zeroTurnEncoder();
+    }
+    Logger.recordOutput("Tuning/ModulesZeroedAt", Timer.getMonotonicTimestamp());
   }
 
   /** Switches all four drive motors between brake and coast. */

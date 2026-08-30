@@ -69,7 +69,11 @@ public class ModuleIOSpark implements ModuleIO {
     driveController = driveSpark.getClosedLoopController();
     turnController = turnSpark.getClosedLoopController();
 
-    absoluteEncoder = new AnalogEncoder(config.encoderChannel);
+    // Only touch the analog input when the encoder is actually wired. On a SystemCore with nothing
+    // on that channel there is no reading to take, and constructing the input would claim hardware
+    // for no reason.
+    absoluteEncoder =
+        Constants.Module.HAS_ABSOLUTE_ENCODERS ? new AnalogEncoder(config.encoderChannel) : null;
     absoluteEncoderOffset = Rotation2d.fromDegrees(config.absoluteEncoderOffsetDegrees);
 
     SparkMaxConfig driveConfig = new SparkMaxConfig();
@@ -97,13 +101,19 @@ public class ModuleIOSpark implements ModuleIO {
     turnConfig.closedLoop.pid(Constants.Module.TURN_KP, 0.0, Constants.Module.TURN_KD);
     turnSpark.configure(turnConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
-    // Seed the turn motor's relative encoder from the absolute encoder so the module knows where it
-    // is pointing at power-on.
-    turnEncoder.setPosition(readAbsolutePosition().getRadians());
+    // With an absolute encoder the module can work out where it is pointing on its own. Without one
+    // it has to be told, so assume it starts aligned — whoever powered the robot on is expected to
+    // have straightened the wheels, and the "Zero Modules" routine re-asserts it on demand.
+    turnEncoder.setPosition(
+        Constants.Module.HAS_ABSOLUTE_ENCODERS ? readAbsolutePosition().getRadians() : 0.0);
     driveEncoder.setPosition(0.0);
   }
 
   private Rotation2d readAbsolutePosition() {
+    if (absoluteEncoder == null) {
+      // No absolute encoder: the relative encoder, zeroed at alignment, is the only heading there is.
+      return new Rotation2d(turnEncoder.getPosition().get(0.0));
+    }
     // AnalogEncoder.get() returns a 0-1 fraction of a full turn with the single-argument
     // constructor used above (fullRange 1, expectedZero 0).
     double radians = absoluteEncoder.get() * 2 * Math.PI;
@@ -131,8 +141,10 @@ public class ModuleIOSpark implements ModuleIO {
     inputs.turnConnected = turnPosition.isValid() && turnVelocity.isValid();
     // An analog encoder is just a voltage, so there is no connection status to read. A
     // disconnected one reads a constant value rather than reporting an error, which shows up as
-    // a module whose absolute position never changes.
-    inputs.turnEncoderConnected = true;
+    // a module whose absolute position never changes. False here means there is no encoder at all,
+    // which is worth seeing in the log because it says the heading is only as good as the last
+    // manual zeroing.
+    inputs.turnEncoderConnected = Constants.Module.HAS_ABSOLUTE_ENCODERS;
     inputs.turnAbsolutePosition = readAbsolutePosition();
     inputs.turnPosition = new Rotation2d(turnPosition.get(0.0));
     inputs.turnVelocityRadPerSec = turnVelocity.get(inputs.turnVelocityRadPerSec);
@@ -179,6 +191,11 @@ public class ModuleIOSpark implements ModuleIO {
     SparkMaxConfig config = new SparkMaxConfig();
     config.closedLoop.pid(kP, 0.0, kD);
     turnSpark.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
+  }
+
+  @Override
+  public void zeroTurnEncoder() {
+    turnEncoder.setPosition(0.0);
   }
 
   @Override

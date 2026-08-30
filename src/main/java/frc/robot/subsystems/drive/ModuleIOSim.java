@@ -147,6 +147,12 @@ public class ModuleIOSim implements ModuleIO {
   }
 
   @Override
+  public void zeroTurnEncoder() {
+    turnSim.setAngle(0.0);
+    turnController.setSetpoint(0.0);
+  }
+
+  @Override
   public void setDriveGains(double kP, double kD, double kS, double kV) {
     driveController.setPID(kP, 0.0, kD);
     driveKs = kS;

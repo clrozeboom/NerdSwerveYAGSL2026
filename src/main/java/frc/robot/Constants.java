@@ -139,6 +139,23 @@ public final class Constants {
     public static final double NOMINAL_VOLTAGE = 12.0;
 
     /**
+     * Whether the Thrifty absolute encoders are actually wired up.
+     *
+     * <p>Currently false: they cannot be connected to this SystemCore. Without them a module has no
+     * idea which way it is pointing at power-on, so instead the wheels are aligned by hand and the
+     * turn encoders zeroed there — either at boot or on demand with the "Zero Modules" routine.
+     *
+     * <p>What that costs: module heading is only correct as long as nothing moves the wheels between
+     * zeroing and driving. Bump a module, or let the steering coast while pushing the robot around,
+     * and it is wrong until you re-zero. Re-zero whenever the robot has been handled, and expect to
+     * do it more often than feels reasonable.
+     *
+     * <p>Set true once the encoders are connected, and the modules will seed themselves from the
+     * absolute reading at boot instead.
+     */
+    public static final boolean HAS_ABSOLUTE_ENCODERS = false;
+
+    /**
      * CAN bus the modules live on. SystemCore supports several, so REVLib 2027 requires a bus id
      * alongside the device id; 0 is the onboard bus. The YAGSL config left {@code canbus} null,
      * meaning the roboRIO's single bus, which maps to 0 here.

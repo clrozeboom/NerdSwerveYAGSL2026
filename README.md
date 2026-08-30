@@ -56,7 +56,7 @@ subsystems/drive/
   Module.java          per-module logic: units, optimization, telemetry
   ModuleIO.java        hardware interface + ModuleIOInputs struct
   ModuleIOSim.java       physics sim
-  ModuleIOSpark.java     SPARK MAX + NEO + Thrifty analog encoder
+  ModuleIOSpark.java     SPARK MAX + NEO (+ Thrifty analog encoder, when wired)
   GyroIO.java          gyro interface + GyroIOInputs struct
   GyroIONone.java        no gyro (the default — none planned)
   GyroIOOnboard.java     SystemCore's built-in IMU
@@ -113,6 +113,32 @@ SystemCore is mounted `FLAT`.
 
 ---
 
+## No absolute encoders — align the wheels by hand
+
+The Thrifty absolute encoders cannot be connected to this SystemCore, so
+`Constants.Module.HAS_ABSOLUTE_ENCODERS` is **false** and the modules are told where they are
+instead of working it out.
+
+The routine is: straighten all four wheels by hand — a straight edge along each side of the chassis
+is the usual way — then press **Back** on the controller, or select `Tuning 1: Zero Modules` and
+enable. Nothing moves; it only changes what the modules believe. Modules also assume they start
+aligned at power-on, so straightening before the robot boots works too.
+
+**Expect to do this often.** Module heading is only correct as long as nothing moves the wheels
+between zeroing and driving, and the steering coasts once the brake timer expires after disable — so
+pushing the robot across the shop is usually enough to lose it. If the robot drives off sideways or
+one corner fights the others, re-zero before assuming a gain is wrong.
+
+Zeroing only acts while **disabled**. Re-zeroing mid-match would tell every module it is pointing
+forward when it is not, and the robot would leave in whatever direction the wheels happened to be
+sitting. `Tuning 1: Report Encoder Offsets` is hidden while there are no encoders to report on.
+
+When the encoders are eventually wired, set `HAS_ABSOLUTE_ENCODERS = true`. The modules will seed
+themselves from the absolute reading at boot, the offset report comes back, and the hand-zeroing
+becomes a convenience rather than a requirement.
+
+---
+
 ## Controls
 
 | Control | Action |
@@ -122,6 +148,7 @@ SystemCore is mounted `FLAT`.
 | Left bumper (hold) | Field-relative instead (needs a gyro to be useful) |
 | East face button (B) | Hold modules in an X |
 | Start | Zero heading |
+| Back | Zero modules — declares the wheels straight (disabled only) |
 
 2027 replaced the individual controller classes with a single `Gamepad`, so bindings use
 `CommandGamepad` and its face-direction button names (`eastFace()` rather than `b()`).
@@ -162,7 +189,8 @@ on the dashboard.
 
 | Routine | Measures | Space needed | On blocks? |
 | --- | --- | --- | --- |
-| Report Encoder Offsets | absolute encoder offsets | none — runs disabled | **yes** |
+| Zero Modules | nothing — declares the wheels straight | none — runs disabled | **yes** |
+| Report Encoder Offsets *(needs encoders)* | absolute encoder offsets | none — runs disabled | **yes** |
 | Turn Step Response | turn kP / kD | none — wheels held still | floor |
 | Spin Step Response | drive kP | ~1 m around the robot | floor |
 | Drive Step Response | drive kP | ~0.5 m per cycle, **open-ended** | floor |
@@ -191,8 +219,9 @@ smearing translation into the results.
 
 ### What can be done on blocks
 
-Only **Report Encoder Offsets** is genuinely a blocks job — it is also the easiest place to sight the
-wheels straight, and it runs while disabled.
+Only the alignment step — **Zero Modules**, or **Report Encoder Offsets** once the encoders are
+wired — is genuinely a blocks job. Blocks are the easiest place to sight the wheels straight, and it
+runs while disabled.
 
 Everything else wants weight on the wheels:
 
@@ -272,11 +301,15 @@ The first three steps need only about a metre of clear floor around the robot, s
 tuning can happen in a corner of the shop. Only step 4 needs a runway, and it can wait until you
 have one.
 
-1. **Report Encoder Offsets.** Point all four wheels forward by hand and run it disabled — blocks are
-   the easiest place to sight them straight. The offsets in `Constants` came from YAGSL, which read
-   the Thrifty encoders through its own conversion, so there is no reason to expect them to transfer.
-   Copy the four printed numbers into `Constants.ModuleConfig` and redeploy. Nothing below means much
-   until this is right.
+1. **Zero Modules.** Straighten all four wheels by hand and press Back while disabled — blocks are
+   the easiest place to sight them. Nothing below means much until the modules agree on which way is
+   forward, and with no absolute encoders this is the only thing that establishes it. Re-do it
+   whenever the robot has been pushed around.
+
+   *(With the encoders wired, this becomes **Report Encoder Offsets** instead: same alignment step,
+   but it prints offsets to paste into `Constants.ModuleConfig` so the modules find themselves at
+   boot. The offsets currently in `Constants` came from YAGSL's own encoder conversion and should not
+   be trusted to transfer.)*
 2. **Feedforward Ramp** or **Spin SysId**, for kS and kV in the correct units — the two gains the
    drive feedforward actually uses. Both spin in place and both cover about 1.75 rotations per run.
    The ramp is one run and you read the answer straight off a plot: put

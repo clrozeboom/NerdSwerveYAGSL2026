@@ -81,6 +81,15 @@ public interface ModuleIO {
   default void setBrakeMode(boolean enabled) {}
 
   /**
+   * Declares that this module is currently pointing straight forward, zeroing the turn encoder there.
+   *
+   * <p>This is how a module finds itself when there is no absolute encoder: align the wheel by hand,
+   * then call this. Does nothing to the wheel — it only changes what the module believes about where
+   * it already is.
+   */
+  default void zeroTurnEncoder() {}
+
+  /**
    * Replaces the drive velocity gains at runtime. Used by the tuning mode so gains can be edited
    * from the dashboard without a redeploy.
    *

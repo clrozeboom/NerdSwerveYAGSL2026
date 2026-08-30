@@ -87,6 +87,12 @@ public class RobotContainer {
 
     // Call the direction the robot currently faces "forward".
     driver.start().onTrue(Commands.runOnce(drive::zeroHeading).ignoringDisable(true));
+
+    // Back re-zeroes the modules, for the common case of having straightened the wheels by hand
+    // after pushing the robot around. Only acts while disabled — see TuningCommands.zeroModules.
+    // Bound unconditionally rather than behind TUNING_MODE because without absolute encoders this
+    // is a normal part of operating the robot, not a tuning aid.
+    driver.back().onTrue(TuningCommands.zeroModules(drive));
   }
 
   private void configureAutoChooser() {
@@ -97,7 +103,11 @@ public class RobotContainer {
     if (Constants.TUNING_MODE) {
       // Listed in the order the README's bring-up sequence works through them: everything that
       // fits in a metre of clearance first, then the two that need a runway.
-      autoChooser.addOption("Tuning 1: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
+      if (Constants.Module.HAS_ABSOLUTE_ENCODERS) {
+        autoChooser.addOption("Tuning 1: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
+      } else {
+        autoChooser.addOption("Tuning 1: Zero Modules (align wheels first)", TuningCommands.zeroModules(drive));
+      }
       autoChooser.addOption("Tuning 2: Feedforward Ramp (quick)", TuningCommands.feedforwardRamp(drive));
       autoChooser.addOption("Tuning 2: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
       autoChooser.addOption("Tuning 3: Spin Step Response", TuningCommands.spinStepResponse(drive));

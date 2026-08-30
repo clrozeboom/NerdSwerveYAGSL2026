@@ -128,6 +128,11 @@ public class Module {
     io.setBrakeMode(enabled);
   }
 
+  /** Declares this module to be pointing straight forward right now. See {@link ModuleIO#zeroTurnEncoder()}. */
+  public void zeroTurnEncoder() {
+    io.zeroTurnEncoder();
+  }
+
   /** Current module heading. */
   public Rotation2d getAngle() {
     return inputs.turnPosition;
