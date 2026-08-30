@@ -200,10 +200,10 @@ public final class Constants {
    * are exactly the values from the four YAGSL module JSONs.
    */
   public enum ModuleConfig {
-    FRONT_LEFT(1, 2, 0, 169.5),
-    FRONT_RIGHT(7, 8, 1, 342.5),
-    BACK_LEFT(3, 4, 2, 14.99),
-    BACK_RIGHT(5, 6, 3, 290.4);
+    FRONT_LEFT(1, 2, 0, 169.5, Module.DRIVE_KS, Module.DRIVE_KV),
+    FRONT_RIGHT(7, 8, 1, 342.5, Module.DRIVE_KS, Module.DRIVE_KV),
+    BACK_LEFT(3, 4, 2, 14.99, Module.DRIVE_KS, Module.DRIVE_KV),
+    BACK_RIGHT(5, 6, 3, 290.4, Module.DRIVE_KS, Module.DRIVE_KV);
 
     /** SPARK MAX CAN ID driving the wheel. */
     public final int driveCanId;
@@ -217,11 +217,43 @@ public final class Constants {
     /** Absolute encoder reading, in degrees, when the module points straight forward. */
     public final double absoluteEncoderOffsetDegrees;
 
-    ModuleConfig(int driveCanId, int turnCanId, int encoderChannel, double offsetDegrees) {
+    /**
+     * This corner's static friction feedforward, in volts.
+     *
+     * <p>Held per module because static friction genuinely differs corner to corner — bearing
+     * preload, seal drag and gear mesh are not identical across four hand-built modules. The 2026
+     * project's SysId run measured front-right at roughly 0.65 V against 0.31-0.41 V on the other
+     * three, which is a large enough spread to be worth carrying separately rather than averaging
+     * away. YAGSL could not express that; this can.
+     *
+     * <p>All four still default to the averaged {@link Module#DRIVE_KS}, because the old measurement
+     * recorded which corner was the outlier but not which value belonged to each of the other three.
+     * Run the feedforward ramp and fill in the real numbers.
+     */
+    public final double driveKs;
+
+    /**
+     * This corner's velocity feedforward, in volts per wheel radian per second.
+     *
+     * <p>Also per module, though expect much less spread than {@link #driveKs}: kV is set by gearing
+     * and motor constants, which are the same part in all four corners. A corner that comes out
+     * noticeably different here is more likely to be a mechanical problem than a gain worth keeping.
+     */
+    public final double driveKv;
+
+    ModuleConfig(
+        int driveCanId,
+        int turnCanId,
+        int encoderChannel,
+        double offsetDegrees,
+        double driveKs,
+        double driveKv) {
       this.driveCanId = driveCanId;
       this.turnCanId = turnCanId;
       this.encoderChannel = encoderChannel;
       this.absoluteEncoderOffsetDegrees = offsetDegrees;
+      this.driveKs = driveKs;
+      this.driveKv = driveKv;
     }
 
     /** All four corners in the canonical FL, FR, BL, BR order. */

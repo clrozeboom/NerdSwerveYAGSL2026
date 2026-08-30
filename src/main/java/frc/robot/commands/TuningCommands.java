@@ -143,6 +143,11 @@ public final class TuningCommands {
    * full SysId routine when you want its statistics and its recommended kP; use this when you just
    * want to see whether the numbers are sane.
    *
+   * <p>Each module is plotted separately — {@code Tuning/Feedforward/&lt;Name&gt;/SpeedMetersPerSec}
+   * — because kS and kV are held per corner. Four lines that lie on top of each other mean the
+   * modules match; one line offset upward is a corner with extra static friction, which is exactly
+   * what the 2026 measurement saw on front-right.
+   *
    * <p>Spins rather than driving straight, and shares the ramp rate and timeout in
    * {@link Constants.SysId}, so it covers the same ~1.75 rotations as one quasistatic run. The
    * original version of this routine ramped to 6 V over 12 s, which on this drivetrain would have
@@ -158,16 +163,27 @@ public final class TuningCommands {
               double volts = timer.get() * Constants.SysId.RAMP_RATE_VOLTS_PER_SEC;
               drive.runCharacterizationSpin(volts);
               Logger.recordOutput("Tuning/Feedforward/Volts", volts);
-              Logger.recordOutput(
-                  "Tuning/Feedforward/SpeedMetersPerSec",
-                  drive.getAverageWheelVelocityRadPerSec() * Constants.Module.WHEEL_RADIUS);
+              for (Module module : drive.getModules()) {
+                Logger.recordOutput(
+                    "Tuning/Feedforward/" + module.getName() + "/SpeedMetersPerSec",
+                    module.getVelocityMetersPerSec());
+              }
             },
             () -> {
               drive.stop();
               timer.stop();
+              System.out.println("=== Feedforward ramp done ===");
               System.out.println(
-                  "=== Feedforward ramp done. Plot Tuning/Feedforward/Volts against"
-                      + " Tuning/Feedforward/SpeedMetersPerSec: intercept is kS, slope is kV. ===");
+                  "  Plot Tuning/Feedforward/<Module>/SpeedMetersPerSec on x against"
+                      + " Tuning/Feedforward/Volts on y.");
+              System.out.println(
+                  "  Per module: intercept is that corner's kS, slope is its kV. Currently:");
+              for (Module module : drive.getModules()) {
+                System.out.printf(
+                    "    %-11s kS %.4f V, kV %.5f V/(rad/s)%n",
+                    module.getName(), module.getDriveKs(), module.getDriveKv());
+              }
+              System.out.println("  Set the measured values in Constants.ModuleConfig.");
             },
             drive)
         .beforeStarting(timer::restart)
@@ -203,7 +219,7 @@ public final class TuningCommands {
                 // configured offset needs to move by exactly that much.
                 double correctionDeg = module.getAbsolutePosition().getDegrees();
                 double newOffsetDeg =
-                    wrapDegrees(currentOffsetOf(module.getName()) + correctionDeg);
+                    wrapDegrees(module.getConfig().absoluteEncoderOffsetDegrees + correctionDeg);
                 System.out.printf(
                     "  %-11s current reading %8.2f deg -> new offset %8.2f deg%n",
                     module.getName(), correctionDeg, newOffsetDeg);
@@ -213,25 +229,6 @@ public final class TuningCommands {
             })
         // No motion, and the wheels have to be positioned by hand, so let it run disabled.
         .ignoringDisable(true);
-  }
-
-  /** The offset currently compiled in for a module, by name. */
-  private static double currentOffsetOf(String moduleName) {
-    for (Constants.ModuleConfig config : Constants.ModuleConfig.ORDERED) {
-      if (displayName(config).equals(moduleName)) {
-        return config.absoluteEncoderOffsetDegrees;
-      }
-    }
-    return 0.0;
-  }
-
-  /** Maps the enum's SCREAMING_CASE onto the CamelCase names the modules log under. */
-  private static String displayName(Constants.ModuleConfig config) {
-    StringBuilder out = new StringBuilder();
-    for (String part : config.name().split("_")) {
-      out.append(part.charAt(0)).append(part.substring(1).toLowerCase());
-    }
-    return out.toString();
   }
 
   private static double wrapDegrees(double degrees) {

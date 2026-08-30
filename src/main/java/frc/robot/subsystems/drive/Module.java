@@ -19,16 +19,13 @@ import org.wpilib.math.kinematics.SwerveModuleVelocity;
  * never touches a motor controller directly.
  */
 public class Module {
-  // Shared across all four modules: tuning one corner's gains and having the others disagree is
-  // almost never what you want, and one set of dashboard entries is easier to drive.
+  // The PID gains are shared. They describe how hard the controller pushes on an error, not a
+  // property of the hardware, so four different values would be four things to keep in step for no
+  // physical reason — and one set of dashboard entries is much easier to drive while tuning.
   private static final TunableNumber driveKp =
       new TunableNumber("Tuning/Drive/kP", Constants.Module.DRIVE_KP);
   private static final TunableNumber driveKd =
       new TunableNumber("Tuning/Drive/kD", Constants.Module.DRIVE_KD);
-  private static final TunableNumber driveKs =
-      new TunableNumber("Tuning/Drive/kS", Constants.Module.DRIVE_KS);
-  private static final TunableNumber driveKv =
-      new TunableNumber("Tuning/Drive/kV", Constants.Module.DRIVE_KV);
   private static final TunableNumber turnKp =
       new TunableNumber("Tuning/Turn/kP", Constants.Module.TURN_KP);
   private static final TunableNumber turnKd =
@@ -37,10 +34,20 @@ public class Module {
   private final ModuleIO io;
   private final ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();
   private final String name;
+  private final Constants.ModuleConfig config;
 
-  public Module(ModuleIO io, String name) {
+  // The feedforward gains are per module, because they describe this corner's hardware. Static
+  // friction in particular varies enough between modules to be worth carrying separately; see
+  // ModuleConfig.driveKs.
+  private final TunableNumber driveKs;
+  private final TunableNumber driveKv;
+
+  public Module(ModuleIO io, String name, Constants.ModuleConfig config) {
     this.io = io;
     this.name = name;
+    this.config = config;
+    this.driveKs = new TunableNumber("Tuning/Drive/" + name + "/kS", config.driveKs);
+    this.driveKv = new TunableNumber("Tuning/Drive/" + name + "/kV", config.driveKv);
 
     // Both IO implementations already apply the compiled-in gains when they are constructed, so
     // consume the initial "changed" state here. Without this the first periodic() would re-push all
@@ -162,6 +169,21 @@ public class Module {
   /** This module's name, for logging and for the calibration report. */
   public String getName() {
     return name;
+  }
+
+  /** This module's hardware configuration: CAN ids, encoder channel, offset and feedforward gains. */
+  public Constants.ModuleConfig getConfig() {
+    return config;
+  }
+
+  /** This corner's live static-friction gain, so the ramp can report what it was measured against. */
+  public double getDriveKs() {
+    return driveKs.get();
+  }
+
+  /** This corner's live velocity gain. */
+  public double getDriveKv() {
+    return driveKv.get();
   }
 
   /** Commands a raw module heading, bypassing optimization. Used by the turn step-response test. */

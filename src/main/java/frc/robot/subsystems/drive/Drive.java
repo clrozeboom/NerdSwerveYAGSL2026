@@ -61,10 +61,12 @@ public class Drive extends SubsystemBase {
       ModuleIO backLeft,
       ModuleIO backRight) {
     this.gyroIO = gyroIO;
-    modules[0] = new Module(frontLeft, MODULE_NAMES[0]);
-    modules[1] = new Module(frontRight, MODULE_NAMES[1]);
-    modules[2] = new Module(backLeft, MODULE_NAMES[2]);
-    modules[3] = new Module(backRight, MODULE_NAMES[3]);
+    // ModuleConfig.ORDERED is in the same front-left, front-right, back-left, back-right order as
+    // MODULE_NAMES and MODULE_TRANSLATIONS, so index i lines up across all three.
+    modules[0] = new Module(frontLeft, MODULE_NAMES[0], Constants.ModuleConfig.ORDERED[0]);
+    modules[1] = new Module(frontRight, MODULE_NAMES[1], Constants.ModuleConfig.ORDERED[1]);
+    modules[2] = new Module(backLeft, MODULE_NAMES[2], Constants.ModuleConfig.ORDERED[2]);
+    modules[3] = new Module(backRight, MODULE_NAMES[3], Constants.ModuleConfig.ORDERED[3]);
 
     SmartDashboard.putData("Field", field);
   }

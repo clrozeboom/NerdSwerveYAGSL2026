@@ -144,8 +144,9 @@ on the way over:
   m/s, so `Constants.Module` converts them to volts per wheel-rad/s. The originals are kept as
   `DRIVE_KV_PER_METER_PER_SEC` / `DRIVE_KA_PER_METER_PER_SEC2`.
 - **Front-right static friction.** The 2026 project measured ~0.65 V against ~0.31–0.41 V on the
-  other three corners. Still worth a physical look. Unlike YAGSL, this structure could hold
-  per-module gains if you want to chase it.
+  other three corners — still worth a physical look, since that much extra drag usually means
+  something is binding. The feedforward gains are now held **per module** so that spread can be
+  carried rather than averaged away; see below.
 
 Every one of these has a bring-up routine that measures it — see below.
 
@@ -228,6 +229,26 @@ takes the quasistatic run from ~2.3 m to ~1.2 m.
 Note the tuning routines command the modules directly and **bypass** `MAX_LINEAR_SPEED`, so the 1
 ft/s teleop cap does not apply to them.
 
+### Per-module feedforward
+
+`kS` and `kV` live on each corner in `Constants.ModuleConfig`, not once for the drivetrain. Static
+friction genuinely differs between four hand-built modules — bearing preload, seal drag, gear mesh —
+and the 2026 measurement saw front-right running roughly 0.65 V against 0.31–0.41 V elsewhere, which
+is too large a spread to average away. YAGSL could only hold one feedforward for the whole
+drivetrain; this can hold four.
+
+All four currently default to the averaged `Module.DRIVE_KS`, because the old measurement recorded
+*which* corner was the outlier but not which value belonged to each of the other three. Nothing is
+invented here — run the feedforward ramp and fill in the real numbers.
+
+The **PID** gains stay shared. They describe how hard the controller pushes on an error rather than
+a property of the hardware, so four copies would be four things to keep in step for no physical
+reason. Dashboard keys reflect the split: `Tuning/Drive/<Module>/kS` per corner, `Tuning/Drive/kP`
+once.
+
+`PerModuleGainsTest` asserts the corners really are independent, so a refactor back to a shared
+static fails the build.
+
 ### Tuning kP without redeploying
 
 Gains are `TunableNumber`s, which publish to the dashboard under `Tuning/Drive/*` and `Tuning/Turn/*`
@@ -259,8 +280,9 @@ have one.
 2. **Feedforward Ramp** or **Spin SysId**, for kS and kV in the correct units — the two gains the
    drive feedforward actually uses. Both spin in place and both cover about 1.75 rotations per run.
    The ramp is one run and you read the answer straight off a plot: put
-   `Tuning/Feedforward/SpeedMetersPerSec` on the x axis against `Tuning/Feedforward/Volts` on the y,
-   and the intercept is kS while the slope is kV. Spin SysId is four runs and needs the log exported
+   `Tuning/Feedforward/<Module>/SpeedMetersPerSec` on the x axis against `Tuning/Feedforward/Volts`
+   on the y, and each corner's intercept is its kS while the slope is its kV. Four lines lying on top
+   of each other means the modules match; one offset upward is the corner with extra static friction. Spin SysId is four runs and needs the log exported
    to the SysId tool, but gives you its statistics and a recommended kP alongside. Start with the
    ramp to see whether the numbers are sane; reach for SysId when you want them properly fitted.
 3. **Spin Step Response** and **Turn Step Response**, for the two kP values. Drive kP should only be
