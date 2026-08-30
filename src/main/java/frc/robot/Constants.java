@@ -100,6 +100,13 @@ public final class Constants {
     public static final double NOMINAL_VOLTAGE = 12.0;
 
     /**
+     * CAN bus the modules live on. SystemCore supports several, so REVLib 2027 requires a bus id
+     * alongside the device id; 0 is the onboard bus. The YAGSL config left {@code canbus} null,
+     * meaning the roboRIO's single bus, which maps to 0 here.
+     */
+    public static final int CAN_BUS_ID = 0;
+
+    /**
      * Drive velocity gains, carried over from the YAGSL pidfproperties {@code drive} block.
      *
      * <p>Treat these as a starting point, not a tune. PID gains only mean anything relative to the
