@@ -49,7 +49,7 @@ public class RobotContainer
   SwerveInputStream driveAngularVelocity = SwerveInputStream.of(drivebase.getSwerveDrive(),
                                                                 () -> driverXbox.getLeftY() * -1,
                                                                 () -> driverXbox.getLeftX() * -1)
-                                                            .withControllerRotationAxis(driverXbox::getRightX)
+                                                            .withControllerRotationAxis(() -> driverXbox.getRightX() * -1)
                                                             .deadband(OperatorConstants.DEADBAND)
                                                             .scaleTranslation(0.8)
                                                             .allianceRelativeControl(true);
@@ -182,21 +182,21 @@ public class RobotContainer
       driverXbox.x().whileTrue(Commands.runOnce(drivebase::lock, drivebase).repeatedly());
       driverXbox.start().onTrue((Commands.runOnce(drivebase::zeroGyro)));
       driverXbox.back().whileTrue(drivebase.centerModulesCommand());
-      driverXbox.leftBumper().onTrue(Commands.none());
       driverXbox.rightBumper().onTrue(Commands.none());
+
+      // --- Bring-up / characterization controls. Run these with the robot elevated so the modules
+      // --- are free to spin. See docs on each command for what to look for.
+      driverXbox.a().whileTrue(drivebase.sysIdDriveMotorCommand());
+      driverXbox.b().whileTrue(drivebase.sysIdAngleMotorCommand());
+      driverXbox.y().whileTrue(drivebase.moduleIdentificationCommand());
+      driverXbox.leftBumper().whileTrue(drivebase.moduleDirectionCheckCommand());
     } else
     {
       driverXbox.a().onTrue((Commands.runOnce(drivebase::zeroGyro)));
       driverXbox.start().whileTrue(Commands.none());
       driverXbox.back().whileTrue(Commands.none());
       driverXbox.leftBumper().whileTrue(Commands.runOnce(drivebase::lock, drivebase).repeatedly());
-
-      // --- Bring-up / characterization controls. Run these with the robot elevated so the modules
-      // --- are free to spin. See docs on each command for what to look for.
-      driverXbox.b().whileTrue(drivebase.sysIdDriveMotorCommand());
-      driverXbox.y().whileTrue(drivebase.sysIdAngleMotorCommand());
-      driverXbox.x().whileTrue(drivebase.moduleIdentificationCommand());
-      driverXbox.rightBumper().whileTrue(drivebase.moduleDirectionCheckCommand());
+      driverXbox.rightBumper().toggleOnTrue(driveRobotOrientedAngularVelocity);
     }
 
   }
