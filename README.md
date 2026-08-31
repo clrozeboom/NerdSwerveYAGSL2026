@@ -92,35 +92,40 @@ loop is driven by the log during replay instead of by the system clock.
 
 ---
 
-## Do we need OpModes?
+## OpModes and the driver station
 
-No. 2027 adds an FTC-style OpMode framework, but it is an alternative to `TimedRobot`, not a
-replacement for it, and nothing about SystemCore requires it.
+The 2027 driver station is **opmode-driven**: it lists the operating modes the robot has published
+and you pick one to enable. Nothing registers any by default — `TimedRobot` contains no opmode code
+at all, and `DriverStationBackend`'s registry starts empty — so a robot that never calls
+`RobotState.addOpMode` publishes an empty list, and there is nothing on the DS to select. That is
+what stops such a robot being enabled, and it is easy to mistake for "OpModes are mandatory".
 
-Checked against the alpha-6 sources rather than assumed:
+They are not. `Robot.publishOpModes()` registers one entry per robot mode — Teleop, Auto, Utility —
+and calls `RobotState.publishOpModes()`. Both are static, so this needs no change of robot base:
 
-- `OpModeRobot extends RobotBase` — it is a *sibling* of `IterativeRobotBase`/`TimedRobot`, not
-  something they are built on.
-- `TimedRobot` contains **zero** references to OpMode. `IterativeRobotBase` likewise.
-- `RobotBase`'s only OpMode references are two convenience getters that delegate to `RobotState`, and
-  an `instanceof OpModeRobot` branch in `startRobot` that does nothing unless your robot *is* one.
-  The getters' own javadoc says they "may return 0 or a unique ID not added, so callers should be
-  prepared to handle that case" — that is, having no opmodes registered is an expected state.
-- Of the fifteen Java robot templates the alpha-6 VS Code extension ships, **one** uses `OpModeRobot`.
-  The `commandv2` template — the official command-based starting point for SystemCore — uses
-  `TimedRobot`, which is what this project is built on.
+- `OpModeRobot extends RobotBase`, making it a *sibling* of `IterativeRobotBase`/`TimedRobot` rather
+  than something they are built on.
+- What `OpModeRobot` adds is automatic discovery of `OpMode` subclasses in its package and a
+  per-opmode lifecycle. Underneath, its own `publishOpModes()` is a one-line delegation to
+  `RobotState.publishOpModes()` — the same call made here.
+- `TimedRobot` keeps dispatching through `teleopPeriodic()` and friends, because those follow the
+  driver station's *robot mode*, which is what each opmode is registered against.
 
-What OpModes actually buy you is a list of named, selectable routines published to the driver
-station, in the FTC style. For this project the auto chooser already covers that need.
+Of the fifteen Java robot templates the alpha-6 extension ships, one uses `OpModeRobot`; `commandv2`,
+the official command-based starting point for SystemCore, uses `TimedRobot`.
 
-### If we do want OpModes later
+> **Not yet confirmed on hardware.** The reasoning above is from the alpha-6 sources; whether the
+> driver station is happy with three plainly-registered opmodes has not been tested on a real
+> SystemCore. If it still refuses to enable, the fallback is a real `OpModeRobot` port — see below.
 
-AdvantageKit is not the blocker people assume. `Logger` has no reference to `LoggedRobot` — the
-logging, `processInputs` and replay-source machinery are all static and work under any robot base.
-The only thing tied to the robot base is `LoggedRobot`'s replay *clock*, which drives the loop from
-the log instead of the system timer. So an OpMode port would keep logging and AdvantageScope
-unchanged and lose only deterministic replay, unless someone writes the OpMode equivalent of
-`LoggedRobot`'s timing — which is a small class, not a rewrite.
+### If a full OpMode port turns out to be needed
+
+AdvantageKit would not be the blocker. `Logger` has no reference to `LoggedRobot` — the logging,
+`processInputs` and replay-source machinery are all static and work under any robot base. Only
+`LoggedRobot`'s replay *clock* is tied to the robot base, so a port would keep logging and
+AdvantageScope unchanged and lose deterministic replay until someone writes the OpMode equivalent of
+that timing, which is a small class rather than a rewrite. The IO layer, `Drive`, the tuning routines
+and every measured constant are untouched either way.
 
 ---
 

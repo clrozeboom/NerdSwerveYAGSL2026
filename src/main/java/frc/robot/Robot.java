@@ -11,7 +11,9 @@ import org.littletonrobotics.junction.wpilog.WPILOGReader;
 import org.littletonrobotics.junction.wpilog.WPILOGWriter;
 import org.wpilib.command2.Command;
 import org.wpilib.command2.CommandScheduler;
+import org.wpilib.driverstation.RobotState;
 import org.wpilib.framework.RobotBase;
+import org.wpilib.hardware.hal.RobotMode;
 import org.wpilib.system.Timer;
 
 /**
@@ -47,7 +49,30 @@ public class Robot extends LoggedRobot {
 
   public Robot() {
     configureLogging();
+    publishOpModes();
     robotContainer = new RobotContainer();
+  }
+
+  /**
+   * Publishes one operating mode per robot mode, so the 2027 driver station has something to select.
+   *
+   * <p>The driver station is opmode-driven: it lists the modes the robot has published and you pick
+   * one to enable. Nothing registers any by default — {@code TimedRobot} has no opmode code at all,
+   * and the backend's registry starts empty — so a robot that never calls {@link
+   * RobotState#addOpMode} publishes an empty list and there is nothing to select.
+   *
+   * <p>Registration is static, so this does not require extending {@code OpModeRobot}. That class
+   * adds automatic discovery of {@code OpMode} subclasses and a per-opmode lifecycle; underneath, its
+   * own {@code publishOpModes()} simply calls {@link RobotState#publishOpModes()} exactly as this
+   * does. Registering the three classic modes here keeps {@code TimedRobot} dispatching through
+   * {@code teleopPeriodic()} and friends as usual, because those follow the driver station's robot
+   * mode rather than the opmode itself.
+   */
+  private void publishOpModes() {
+    RobotState.addOpMode(RobotMode.TELEOPERATED, "Teleop");
+    RobotState.addOpMode(RobotMode.AUTONOMOUS, "Auto");
+    RobotState.addOpMode(RobotMode.UTILITY, "Utility");
+    RobotState.publishOpModes();
   }
 
   /**
