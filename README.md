@@ -92,6 +92,38 @@ loop is driven by the log during replay instead of by the system clock.
 
 ---
 
+## Do we need OpModes?
+
+No. 2027 adds an FTC-style OpMode framework, but it is an alternative to `TimedRobot`, not a
+replacement for it, and nothing about SystemCore requires it.
+
+Checked against the alpha-6 sources rather than assumed:
+
+- `OpModeRobot extends RobotBase` — it is a *sibling* of `IterativeRobotBase`/`TimedRobot`, not
+  something they are built on.
+- `TimedRobot` contains **zero** references to OpMode. `IterativeRobotBase` likewise.
+- `RobotBase`'s only OpMode references are two convenience getters that delegate to `RobotState`, and
+  an `instanceof OpModeRobot` branch in `startRobot` that does nothing unless your robot *is* one.
+  The getters' own javadoc says they "may return 0 or a unique ID not added, so callers should be
+  prepared to handle that case" — that is, having no opmodes registered is an expected state.
+- Of the fifteen Java robot templates the alpha-6 VS Code extension ships, **one** uses `OpModeRobot`.
+  The `commandv2` template — the official command-based starting point for SystemCore — uses
+  `TimedRobot`, which is what this project is built on.
+
+What OpModes actually buy you is a list of named, selectable routines published to the driver
+station, in the FTC style. For this project the auto chooser already covers that need.
+
+### If we do want OpModes later
+
+AdvantageKit is not the blocker people assume. `Logger` has no reference to `LoggedRobot` — the
+logging, `processInputs` and replay-source machinery are all static and work under any robot base.
+The only thing tied to the robot base is `LoggedRobot`'s replay *clock*, which drives the loop from
+the log instead of the system timer. So an OpMode port would keep logging and AdvantageScope
+unchanged and lose only deterministic replay, unless someone writes the OpMode equivalent of
+`LoggedRobot`'s timing — which is a small class, not a rewrite.
+
+---
+
 ## No gyro — and why the default is robot-relative
 
 There is no gyro on this robot and none planned, so **robot-relative driving is the default**.
