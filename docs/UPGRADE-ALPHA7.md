@@ -1,7 +1,12 @@
 # Upgrading to WPILib 2027.0.0-alpha-7
 
-Status as of 2026-09-02: **feasible now.** AdvantageKit 27.0.0-alpha-5 shipped clean against
-alpha-7 and cleared the hard blocker. Our own code is ready to move on a few hours' notice.
+Status: **done, 2026-09-02.** AdvantageKit 27.0.0-alpha-5 shipped clean against alpha-7 and cleared
+the hard blocker; the migration was carried out the same day on `claude/swerve-2027-alpha7`.
+
+This document is kept as the record of what the upgrade involved. The parts that turned out to be
+wrong or incomplete when actually executed are marked below — the plan predicted six files and three
+API changes; the real surface was thirteen files and eight, and the largest single change (the build
+moving off the shadow jar) was not in the plan at all.
 
 Release: <https://github.com/wpilibsuite/allwpilib/releases/tag/v2027.0.0-alpha-7>
 
@@ -74,7 +79,43 @@ tuning entries follow it.
 
 ---
 
-## Plan, in order
+## What it actually took
+
+Executed on `claude/swerve-2027-alpha7`, branched from `claude/swerve-2027-advantagekit`.
+
+Three changes the plan did not predict, all found by compiling rather than by reading release notes:
+
+| Change | Why it was missed |
+| --- | --- |
+| `RobotBase.startRobot(Robot.class)` → `startRobot(Robot::new)` | alpha-6 had changed this *to* a class; alpha-7 changed it back to a supplier |
+| `SysIdRoutine.Direction.kForward`/`kReverse` → `.FORWARD`/`.REVERSE` | the k-prefix rename applied to enums beyond geometry |
+| `CommandGamepad.eastFace()` → `faceRight()` | compass-point button names became orientation names |
+
+And one structural change larger than everything else combined:
+
+**alpha-7's project template drops the shadow fat jar for the `application` plugin.** `build.gradle`
+was rebuilt from the alpha-7 template rather than edited, which is the only reason this was caught —
+`debugJni` also moved back inside the artifact block and `wpi.java.debugJni` became
+`wpi.java.runSimWithDebugJni`. Diffing against the template is what the plan said to do, and it paid
+for itself here.
+
+Two plan entries were wrong:
+
+- **`Field2d` is not deleted.** It survives in `org.wpilib.smartdashboard` along with the
+  `Mechanism2d` family; only the `Sendable` plumbing it published through went away. It implements
+  `TelemetryLoggable`, so `Telemetry.log("Field", field)` replaces `SmartDashboard.putData`.
+- **The chooser went to AdvantageKit, not `Tunables.publish`.** `LoggedNetworkChooser` wraps a
+  `Selectable` but also logs the selection and replays it, which is the better fit here.
+
+Verified: `./gradlew build` green with all six unit tests passing, clean headless sim startup with
+no loop overruns, and an AdvantageKit replay round-trip producing 39 recomputed output keys.
+
+Not verified: hardware. Also note the upgrade **costs** PathPlannerLib and PhotonLib — both are
+blocked on alpha-7 as of today, so they cannot be added until their vendors catch up.
+
+---
+
+## Plan, in order (as written beforehand)
 
 1. ~~**Wait for AdvantageKit.**~~ Done — 27.0.0-alpha-5, 2026-09-02. Bump `akitVersion` in
    `build.gradle` from `27.0.0-alpha-4`; the `akit-autolog` annotation processor moves with it.

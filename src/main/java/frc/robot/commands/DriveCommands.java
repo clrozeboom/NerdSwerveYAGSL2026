@@ -93,7 +93,7 @@ public final class DriveCommands {
   private static Translation2d applyRadialDeadband(double x, double y) {
     double magnitude = MathUtil.applyDeadband(Math.hypot(x, y), Constants.Operator.DEADBAND);
     if (magnitude == 0.0) {
-      return Translation2d.kZero;
+      return Translation2d.ZERO;
     }
     Rotation2d direction = new Rotation2d(x, y);
     double scaled = magnitude * magnitude;

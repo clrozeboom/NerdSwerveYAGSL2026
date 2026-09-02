@@ -11,12 +11,11 @@ import frc.robot.subsystems.drive.Drive;
 import frc.robot.subsystems.drive.GyroIONone;
 import frc.robot.subsystems.drive.ModuleIOSim;
 import frc.robot.subsystems.drive.ModuleIOSpark;
+import org.littletonrobotics.junction.networktables.LoggedNetworkChooser;
 import org.wpilib.command2.Command;
 import org.wpilib.command2.Commands;
 import org.wpilib.command2.button.CommandGamepad;
 import org.wpilib.framework.RobotBase;
-import org.wpilib.smartdashboard.SendableChooser;
-import org.wpilib.smartdashboard.SmartDashboard;
 
 /**
  * Wires the robot together: picks the IO implementations for the current environment, builds the
@@ -28,7 +27,11 @@ import org.wpilib.smartdashboard.SmartDashboard;
 public class RobotContainer {
   private final CommandGamepad driver = new CommandGamepad(0);
   private final Drive drive;
-  private final SendableChooser<Command> autoChooser = new SendableChooser<>();
+  // alpha-7 deleted SendableChooser. AdvantageKit's replacement takes the NetworkTables key in
+  // its constructor, so there is no separate publish step, and the selection is written to the log
+  // and fed back on replay — which a bare tunable Selectable would not do.
+  private final LoggedNetworkChooser<Command> autoChooser =
+      new LoggedNetworkChooser<>("Auto Chooser");
 
   public RobotContainer() {
     if (RobotBase.isReal()) {
@@ -83,7 +86,7 @@ public class RobotContainer {
                 () -> -driver.getRightX()));
 
     // Hold the modules in an X to resist being pushed.
-    driver.eastFace().whileTrue(DriveCommands.stopWithX(drive));
+    driver.faceRight().whileTrue(DriveCommands.stopWithX(drive));
 
     // Call the direction the robot currently faces "forward".
     driver.start().onTrue(Commands.runOnce(drive::zeroHeading).ignoringDisable(true));
@@ -96,7 +99,7 @@ public class RobotContainer {
   }
 
   private void configureAutoChooser() {
-    autoChooser.setDefaultOption("Do Nothing", Commands.none());
+    autoChooser.addDefault("Do Nothing", Commands.none());
     // Bring-up routines. These live on the auto chooser because that is the one place a command can
     // be picked and run without a controller binding; see TuningCommands for what each one measures
     // and which of them move the robot.
@@ -104,20 +107,18 @@ public class RobotContainer {
       // Listed in the order the README's bring-up sequence works through them: everything that
       // fits in a metre of clearance first, then the two that need a runway.
       if (Constants.Module.HAS_ABSOLUTE_ENCODERS) {
-        autoChooser.addOption("Tuning 1: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
+        autoChooser.add("Tuning 1: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
       } else {
-        autoChooser.addOption("Tuning 1: Zero Modules (align wheels first)", TuningCommands.zeroModules(drive));
+        autoChooser.add("Tuning 1: Zero Modules (align wheels first)", TuningCommands.zeroModules(drive));
       }
-      autoChooser.addOption("Tuning 2: Feedforward Ramp (quick)", TuningCommands.feedforwardRamp(drive));
-      autoChooser.addOption("Tuning 2: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
-      autoChooser.addOption("Tuning 3: Spin Step Response", TuningCommands.spinStepResponse(drive));
-      autoChooser.addOption("Tuning 3: Turn Step Response", TuningCommands.turnStepResponse(drive));
-      autoChooser.addOption("Tuning 4: Measure Wheel Radius", TuningCommands.measureWheelRadius(drive));
-      autoChooser.addOption("Tuning (opt): Drive Step Response", TuningCommands.driveStepResponse(drive));
-      autoChooser.addOption("Tuning (opt): Drive SysId (all four)", TuningCommands.driveSysIdFull(drive));
+      autoChooser.add("Tuning 2: Feedforward Ramp (quick)", TuningCommands.feedforwardRamp(drive));
+      autoChooser.add("Tuning 2: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
+      autoChooser.add("Tuning 3: Spin Step Response", TuningCommands.spinStepResponse(drive));
+      autoChooser.add("Tuning 3: Turn Step Response", TuningCommands.turnStepResponse(drive));
+      autoChooser.add("Tuning 4: Measure Wheel Radius", TuningCommands.measureWheelRadius(drive));
+      autoChooser.add("Tuning (opt): Drive Step Response", TuningCommands.driveStepResponse(drive));
+      autoChooser.add("Tuning (opt): Drive SysId (all four)", TuningCommands.driveSysIdFull(drive));
     }
-
-    SmartDashboard.putData("Auto Chooser", autoChooser);
   }
 
   /** The command to run in autonomous, from the dashboard chooser. */

@@ -1,6 +1,6 @@
 # NerdSwerve 2027 — Custom Swerve
 
-Team 5010's swerve drivetrain, written from scratch against **WPILib 2027.0.0-alpha-6** using the
+Team 5010's swerve drivetrain, written from scratch against **WPILib 2027.0.0-alpha-7** using the
 **Commands v2** framework and **AdvantageKit** for logging and deterministic replay.
 
 This replaces the YAGSL-based 2026 project. Every drivetrain number here — CAN IDs, gear ratios,
@@ -10,41 +10,52 @@ physical robot.
 
 ---
 
-## Why alpha-6 and not alpha-7
+## Running on alpha-7
 
-alpha-7 is the newest WPILib 2027 alpha, but alpha-6 is the better place to build right now:
+This project was built on alpha-6 and moved to alpha-7 on 2026-09-02, once AdvantageKit
+27.0.0-alpha-5 shipped. Until then alpha-7 was unusable here: every published 2027 vendordep still
+declares `wpilibYear: 2027_alpha5`, and AdvantageKit's alpha-4 build referenced five classes alpha-7
+deleted (`SendableChooser`, `SmartDashboard`, `Sendable`, `NTSendable`, `NTSendableBuilder`).
+alpha-5 dropped all of them — it publishes through raw NetworkTables topics now.
 
-- **Every published 2027 vendordep targets `2027_alpha5`.** PathPlannerLib, Phoenix6, REVLib,
-  ReduxLib, ThriftyLib and PhotonLib all declare that. Checking their jars' class references against
-  each alpha, the classes they need — `SendableChooser`, `SmartDashboard`, `Sendable`, `Alert`,
-  `Pair`, `AprilTagFieldLayout`, `EpilogueBackend` — all still exist in alpha-6. Several are **gone**
-  in alpha-7.
-- **alpha-7 deleted the whole `Sendable`/`SmartDashboard` world** and replaced it with new
-  `org.wpilib.telemetry` and `org.wpilib.tunable` modules. Building on alpha-6 means the dashboard
-  code here is ordinary and portable rather than written against modules that did not exist a
-  release ago.
+Build requirements:
 
-The cost is that alpha-6's WPILib jars are **not** on the public frcmaven mirror — only alpha-7 is.
-They come from the local WPILib 2027 alpha-6 installer, which `settings.gradle` points at via
-`wpilibYear = '2027_alpha5'` (alpha-6 keeps the `alpha5` directory name). Everyone building this
-needs that installer; it also supplies the JDK 25 the build requires.
+- **The WPILib 2027 alpha-7 installer.** `settings.gradle` points at it via
+  `wpilibYear = '2027_alpha7'` — unlike alpha-6, which kept the `alpha5` directory name, alpha-7
+  uses its own. The installer also supplies the JDK the build requires (Temurin 25.0.4.1).
+- Everything else resolves from frcmaven.
 
-### Migrating to alpha-7 later
-
-The changes this project would need, all mechanical:
+### What the migration touched
 
 | alpha-6 | alpha-7 |
 | --- | --- |
 | `Rotation2d.kZero`, `Pose2d.kZero`, `Translation2d.kZero` | `.ZERO` (constants renamed to all-caps) |
+| `Rotation2d.kCCW_Pi_2` | `Rotation2d.CCW_PI_2` |
 | `Translation2d.getAngle()` returns `Rotation2d` | returns `Optional<Rotation2d>` |
-| `org.wpilib.smartdashboard.SmartDashboard` | removed → `org.wpilib.telemetry.Telemetry` |
-| `org.wpilib.smartdashboard.SendableChooser` | removed → `org.wpilib.tunable.Selectable` + `Tunables.publish` |
-| `org.wpilib.smartdashboard.Field2d` | removed along with `Sendable` |
-| `org.wpilib.driverstation.Alert` | `org.wpilib.util.Alert` |
-| `org.wpilib.math.util.Pair` | `org.wpilib.util.Pair` |
+| `SmartDashboard.putData` | `org.wpilib.telemetry.Telemetry.log` |
+| `SendableChooser` | AdvantageKit's `LoggedNetworkChooser` |
+| `RobotBase.startRobot(Robot.class)` | `startRobot(Robot::new)` — back to a supplier |
+| `SysIdRoutine.Direction.kForward` / `kReverse` | `.FORWARD` / `.REVERSE` |
+| `CommandGamepad.eastFace()` | `faceRight()` — compass names became orientation names |
+| shadow fat jar (`com.gradleup.shadow`) | the `application` plugin; `build.gradle` came from the alpha-7 template |
 
-`SmartDashboard` is only touched in two places now that AdvantageKit's `Logger` carries the
-telemetry: the `Field2d` publish in `Drive` and the auto chooser in `RobotContainer`.
+Two of those are worth knowing about beyond the rename:
+
+**`Field2d` survives.** The release notes read as though it went with the rest of the Sendable
+world, but `org.wpilib.smartdashboard` still ships `Field2d`, `FieldObject2d` and the whole
+`Mechanism2d` family. Only the plumbing it published *through* went away — it implements
+`TelemetryLoggable` now, so `Telemetry.log("Field", field)` takes it directly.
+
+**The chooser went to AdvantageKit, not to WPILib.** `org.wpilib.tunable.Selectable` +
+`Tunables.publish` is the stock replacement, but `LoggedNetworkChooser` wraps a `Selectable`
+underneath and additionally writes the selection to the log and feeds it back on replay — which
+matters on a project built around replay. It takes the NetworkTables key in its constructor, so
+there is no separate publish call.
+
+**No more fat jar.** alpha-7's template deploys via the `application` plugin instead of a shaded
+jar, so `build/libs/` holds a thin jar and the runnable form is `./gradlew installDist` →
+`build/install/NerdSwerve2027/`. To run headless, put `build/install/*/lib/*.jar` on the classpath
+rather than looking for a `-all.jar`.
 
 ---
 
@@ -111,12 +122,17 @@ and calls `RobotState.publishOpModes()`. Both are static, so this needs no chang
 - `TimedRobot` keeps dispatching through `teleopPeriodic()` and friends, because those follow the
   driver station's *robot mode*, which is what each opmode is registered against.
 
-Of the fifteen Java robot templates the alpha-6 extension ships, one uses `OpModeRobot`; `commandv2`,
-the official command-based starting point for SystemCore, uses `TimedRobot`.
+Of the seventeen Java robot templates the alpha-7 extension ships, three use `OpModeRobot`
+(`opmode`, `commandv3`, `commandv3skeleton`); `commandv2`, the command-based starting point this
+project follows, still extends `TimedRobot`.
 
-> **Not yet confirmed on hardware.** The reasoning above is from the alpha-6 sources; whether the
-> driver station is happy with three plainly-registered opmodes has not been tested on a real
-> SystemCore. If it still refuses to enable, the fallback is a real `OpModeRobot` port — see below.
+Re-checked against alpha-7 on 2026-09-02: `RobotState.addOpMode` and `publishOpModes()` are
+unchanged from alpha-6, so the registration here carries over as-is.
+
+> **Not yet confirmed on hardware.** Whether the driver station is happy with three
+> plainly-registered opmodes has not been tested on a real SystemCore — that check is what this was
+> written for, and it is still outstanding. If it still refuses to enable, the fallback is a real
+> `OpModeRobot` port — see below.
 
 ### If a full OpMode port turns out to be needed
 
@@ -375,24 +391,42 @@ overrides it. Revisit those numbers once step 4 has established the real gearing
 
 ## Not yet carried over
 
+**Moving to alpha-7 put both of the first two out of reach for now.** Their newest 2027 builds
+still reference classes alpha-7 deleted, measured against the alpha-7 class index on 2026-09-02:
+
 - **PathPlanner / autonomous paths.** The auto chooser currently offers "Do Nothing" and the
-  characterization routine. PathPlannerLib has a 2027 alpha-3 build that is compatible with alpha-6.
-- **Vision.** PhotonLib has a 2027 alpha-2 build, also alpha-6-compatible.
+  characterization routines. PathPlannerLib 2027.0.0-alpha-3 is **blocked on alpha-7** — it
+  references `Alert`, `math.util.Pair` and `SendableChooser`. It worked on alpha-6.
+- **Vision.** PhotonLib v2027.0.0-alpha-2 is **blocked on alpha-7** — seven missing classes,
+  including the `AprilTag` family, which alpha-7 moved out of `vision.apriltag`.
 - **Pose estimation from vision.** `Drive` tracks pose by wheel odometry only. WPILib's
-  `SwerveDrivePoseEstimator` exists in alpha-6 and slots in behind the same interface when there is
-  a vision measurement to fuse.
+  `SwerveDrivePoseEstimator` is core, not a vendordep, so it slots in behind the same interface
+  whenever there is a vision measurement to fuse — independent of the two above.
+
+`tools/check-alpha7-readiness.sh` reports when these clear; a routine runs it every 6 hours. If
+either becomes urgent before its vendor catches up, `claude/swerve-2027-alpha6` is still on alpha-6
+where both work.
 
 ---
 
 ## Verification status
 
-**This builds and runs.** `./gradlew build` succeeds against the real WPILib 2027 alpha-6 toolchain,
-the robot program starts and loops in simulation, and an AdvantageKit replay round-trip has been
-exercised end to end.
+**This builds and runs on alpha-7.** `./gradlew build` succeeds against the real WPILib 2027
+alpha-7 toolchain and all six unit tests pass; the robot program starts clean in simulation with no
+loop overruns; and an AdvantageKit replay round-trip has been re-verified on alpha-7, producing a
+`_replay.wpilog` with 39 recomputed output keys across all four modules.
 
 What has *not* been done: nothing has touched real hardware. `ModuleIOSpark` compiles against REVLib
 2027.0.0-alpha-6 and every call resolves, but no SPARK MAX has answered any of them. Expect the
 usual first-bringup work — encoder directions, absolute offsets, and the PID gains that did not
 transfer from YAGSL.
 
-`./gradlew build`, then `./gradlew simulateJava` to drive it in the simulator.
+One alpha-7 caveat specific to hardware: REVLib's only alpha-7-missing class
+(`math.util.Pair`) sits in `com.revrobotics.sim.MovingAverageFilterSim`, reachable only from
+`SparkSim`. Nothing here loads that — simulation goes through `ModuleIOSim`, and the hardware path
+uses `SparkMax` — so it should never throw. The simulation runs above do not exercise that path
+either way, so first hardware bringup is where it is genuinely confirmed.
+
+`./gradlew build`, then `./gradlew simulateJava` to drive it in the simulator. For a headless run,
+`./gradlew installDist` and put `build/install/*/lib/*.jar` on the classpath — alpha-7 no longer
+builds a fat jar.

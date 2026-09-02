@@ -50,7 +50,8 @@ class SpinGeometryTest {
   @Test
   void tangentAnglesAreQuarterTurnFromModulePositions() {
     for (int i = 0; i < 4; i++) {
-      double positionDeg = Constants.Drivebase.MODULE_TRANSLATIONS[i].getAngle().getDegrees();
+      double positionDeg =
+          Constants.Drivebase.MODULE_TRANSLATIONS[i].getAngle().orElseThrow().getDegrees();
       double tangentDeg = Drive.tangentAngle(i).getDegrees();
       double difference = Math.IEEEremainder(tangentDeg - positionDeg, 360.0);
       assertEquals(90.0, difference, 1e-9, "module " + i + " tangent should lead its position by 90 deg");

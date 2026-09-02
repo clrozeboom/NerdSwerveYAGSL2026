@@ -47,10 +47,10 @@ public interface ModuleIO {
     public boolean turnEncoderConnected = false;
 
     /** Absolute module heading, already offset-corrected. */
-    public Rotation2d turnAbsolutePosition = Rotation2d.kZero;
+    public Rotation2d turnAbsolutePosition = Rotation2d.ZERO;
 
     /** Module heading as tracked by the turn motor's own encoder. */
-    public Rotation2d turnPosition = Rotation2d.kZero;
+    public Rotation2d turnPosition = Rotation2d.ZERO;
 
     /** Turn speed, in radians per second of module rotation. */
     public double turnVelocityRadPerSec = 0.0;

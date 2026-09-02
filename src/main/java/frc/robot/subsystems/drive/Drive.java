@@ -15,7 +15,7 @@ import org.wpilib.math.kinematics.SwerveDriveKinematics;
 import org.wpilib.math.kinematics.SwerveModulePosition;
 import org.wpilib.math.kinematics.SwerveModuleVelocity;
 import org.wpilib.smartdashboard.Field2d;
-import org.wpilib.smartdashboard.SmartDashboard;
+import org.wpilib.telemetry.Telemetry;
 import org.wpilib.system.Timer;
 
 /**
@@ -45,7 +45,7 @@ public class Drive extends SubsystemBase {
   private final Field2d field = new Field2d();
 
   /** Heading used for field-relative driving and odometry. */
-  private Rotation2d rawGyroRotation = Rotation2d.kZero;
+  private Rotation2d rawGyroRotation = Rotation2d.ZERO;
 
   /** Module positions as of the previous loop, used to integrate heading when there is no gyro. */
   private SwerveModulePosition[] lastModulePositions = {
@@ -53,7 +53,7 @@ public class Drive extends SubsystemBase {
     new SwerveModulePosition(), new SwerveModulePosition()
   };
 
-  private Pose2d pose = Pose2d.kZero;
+  private Pose2d pose = Pose2d.ZERO;
 
   public Drive(
       GyroIO gyroIO,
@@ -69,7 +69,9 @@ public class Drive extends SubsystemBase {
     modules[2] = new Module(backLeft, MODULE_NAMES[2], Constants.ModuleConfig.ORDERED[2]);
     modules[3] = new Module(backRight, MODULE_NAMES[3], Constants.ModuleConfig.ORDERED[3]);
 
-    SmartDashboard.putData("Field", field);
+    // Field2d itself survived alpha-7; only the Sendable plumbing it used to publish through
+    // went away. It implements TelemetryLoggable now, so Telemetry.log takes it directly.
+    Telemetry.log("Field", field);
   }
 
   @Override
@@ -159,7 +161,7 @@ public class Drive extends SubsystemBase {
    */
   public void stopWithX() {
     for (int i = 0; i < modules.length; i++) {
-      Rotation2d angle = Constants.Drivebase.MODULE_TRANSLATIONS[i].getAngle();
+      Rotation2d angle = moduleAngle(i);
       modules[i].runSetpoint(new SwerveModuleVelocity(0.0, angle));
     }
   }
@@ -194,9 +196,23 @@ public class Drive extends SubsystemBase {
    * a quarter turn. Driving all four at this angle spins the robot counter-clockwise.
    */
   static Rotation2d tangentAngle(int moduleIndex) {
+    return moduleAngle(moduleIndex).plus(Rotation2d.CCW_PI_2);
+  }
+
+  /**
+   * The direction from robot centre out to a module.
+   *
+   * <p>2027 made {@code Translation2d.getAngle()} return an {@link java.util.Optional}, because a
+   * zero-length translation has no direction. A module translation is never zero — each one is a
+   * compile-time constant at a corner of the drivebase, half a track width out on both axes — so
+   * the empty case here means someone has configured a module at robot centre, which is not a
+   * recoverable state and would silently produce wrong geometry if defaulted away.
+   */
+  private static Rotation2d moduleAngle(int moduleIndex) {
     return Constants.Drivebase.MODULE_TRANSLATIONS[moduleIndex]
         .getAngle()
-        .plus(Rotation2d.kCCW_Pi_2);
+        .orElseThrow(
+            () -> new IllegalStateException("Module " + moduleIndex + " is at robot centre"));
   }
 
   /**
@@ -238,7 +254,7 @@ public class Drive extends SubsystemBase {
    */
   public void runDriveSetpoint(double velocityRadPerSec) {
     for (Module module : modules) {
-      module.runTurnSetpoint(Rotation2d.kZero);
+      module.runTurnSetpoint(Rotation2d.ZERO);
       module.runDriveSetpoint(velocityRadPerSec);
     }
     Logger.recordOutput("Tuning/DriveSetpointRadPerSec", velocityRadPerSec);
@@ -333,8 +349,8 @@ public class Drive extends SubsystemBase {
   /** Zeroes the heading so that the direction the robot currently faces becomes "forward". */
   public void zeroHeading() {
     gyroIO.resetYaw();
-    rawGyroRotation = Rotation2d.kZero;
-    pose = new Pose2d(pose.getTranslation(), Rotation2d.kZero);
+    rawGyroRotation = Rotation2d.ZERO;
+    pose = new Pose2d(pose.getTranslation(), Rotation2d.ZERO);
   }
 
   /** The drivetrain's kinematics, exposed for path-following code added later. */

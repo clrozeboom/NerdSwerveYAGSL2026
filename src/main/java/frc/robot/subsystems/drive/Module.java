@@ -104,7 +104,7 @@ public class Module {
    */
   public void runCharacterization(double volts) {
     io.setDriveOpenLoop(volts);
-    io.setTurnPosition(Rotation2d.kZero);
+    io.setTurnPosition(Rotation2d.ZERO);
   }
 
   /**
