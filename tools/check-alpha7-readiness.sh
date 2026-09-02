@@ -54,6 +54,15 @@ REVLib|https://maven.revrobotics.com/com/revrobotics/frc/REVLib-java|REVLib-java
 Phoenix6|https://maven.ctr-electronics.com/release/com/ctre/phoenix6/wpiapi-java|wpiapi-java|BasicRobotLessons
 PhotonLib|https://maven.photonvision.org/repository/internal/org/photonvision/photonlib-java|photonlib-java|BasicRobotLessons'
 
+# Missing classes we have analysed and cleared, as label|class|why.
+#
+# A missing class only breaks something if the JVM actually loads the class that references it.
+# These are references sitting on code paths this project never reaches, so they can never throw.
+# Each entry is a human judgement recorded once, not something the script works out — and anything
+# NOT listed here still blocks, so a new missing class in a future vendor build is never waived
+# silently.
+WAIVED='REVLib|org/wpilib/math/util/Pair|only referenced by com.revrobotics.sim.MovingAverageFilterSim, reachable solely from SparkSim; this project simulates through its own ModuleIOSim and never touches REVLib sim'
+
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
@@ -193,9 +202,27 @@ while IFS='|' read -r label base artifact project; do
   fi
 
   missing=$(comm -23 <(echo "$refs") "$INDEX")
+
+  # Set aside the references we have already analysed as unreachable for this project.
+  waived=$(echo "$WAIVED" | grep "^$label|" | cut -d'|' -f2 | sort -u)
+  if [ -n "$waived" ] && [ -n "$missing" ]; then
+    still=$(comm -12 <(echo "$missing") <(echo "$waived"))
+    missing=$(comm -23 <(echo "$missing") <(echo "$waived"))
+    waived="$still"
+  else
+    waived=""
+  fi
+
   if [ -z "$missing" ]; then
-    printf '  %-13s %-31s [%s] CLEAN against alpha-7\n' "$label" "$measured" "$project"
-    SUMMARY="$SUMMARY$label $measured clean; "
+    if [ -n "$waived" ]; then
+      printf '  %-13s %-31s [%s] CLEAN against alpha-7 (%s waived reference(s), see WAIVED)\n' \
+        "$label" "$measured" "$project" "$(echo "$waived" | wc -l)"
+      echo "$waived" | sed 's|^org/wpilib/|      waived: |'
+      SUMMARY="$SUMMARY$label $measured clean (waived); "
+    else
+      printf '  %-13s %-31s [%s] CLEAN against alpha-7\n' "$label" "$measured" "$project"
+      SUMMARY="$SUMMARY$label $measured clean; "
+    fi
   else
     n=$(echo "$missing" | wc -l)
     printf '  %-13s %-31s [%s] BLOCKED — %s class(es) missing in alpha-7:\n' \
