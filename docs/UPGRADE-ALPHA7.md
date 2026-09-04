@@ -1,7 +1,25 @@
 # Upgrading to WPILib 2027.0.0-alpha-7
 
-Status as of 2026-09-02: **feasible now.** AdvantageKit 27.0.0-alpha-5 shipped clean against
-alpha-7 and cleared the hard blocker. Our own code is ready to move on a few hours' notice.
+Status as of 2026-09-02: **not feasible — blocked on REVLib's native library.**
+
+AdvantageKit 27.0.0-alpha-5 cleared the Java-level blocker, and the source migration was carried
+out on `claude/swerve-2027-alpha7` — it builds, tests and replays cleanly. It cannot run on
+hardware. REVLib 2027.0.0-alpha-6's `libREVLibWpi.so` needs two symbols alpha-7 removed:
+
+| Symbol | alpha-6 | alpha-7 |
+| --- | --- | --- |
+| `fmt::v12::vformat[abi:cxx11](...)` | exported (138 `fmt::` symbols in `libwpiutil.so`) | **gone — zero exported** |
+| `wpi::util::WaitForObject(unsigned int)` | exported | **gone** — C-ABI `WPI_WaitForObject` only |
+
+The JVM binds lazily, so `System.load` succeeds and the build is green; the process dies with a
+`symbol lookup error` on the first `SparkMax`, which robot code cannot catch. Verified both ways:
+the same construction plus `configure()` works on alpha-6 and kills the JVM on alpha-7. There is no
+newer REVLib to move to — 2027.0.0-alpha-6 is the only 2027 build, last published 2026-07-28.
+
+**This branch (alpha-6) stays the deployable one** until REV ships a rebuild.
+
+The class-level check below said GO, and was not wrong about classes — it just was not the whole
+question. `tools/check-alpha7-readiness.sh` now checks native symbols too and reports BLOCKED.
 
 Release: <https://github.com/wpilibsuite/allwpilib/releases/tag/v2027.0.0-alpha-7>
 
