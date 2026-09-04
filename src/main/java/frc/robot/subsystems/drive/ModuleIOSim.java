@@ -35,6 +35,9 @@ public class ModuleIOSim implements ModuleIO {
   private final PIDController turnController =
       new PIDController(Constants.Module.TURN_KP, 0.0, Constants.Module.TURN_KD);
 
+  /** Width of the velocity band over which static friction is blended in; see {@link #driveFrictionVolts()}. */
+  private static final double FRICTION_BLEND_RAD_PER_SEC = 0.25;
+
   private double driveKs = Constants.Module.DRIVE_KS;
   private double driveKv = Constants.Module.DRIVE_KV;
 
@@ -96,7 +99,12 @@ public class ModuleIOSim implements ModuleIO {
       turnController.reset();
     }
 
-    driveSim.setInputVoltage(clampToBattery(driveAppliedVolts));
+    // DCMotorSim is frictionless, but kS exists precisely to overcome static friction. Feeding a
+    // real robot's kS into a frictionless plant is surplus voltage with nothing to cancel it, so
+    // model the friction it compensates for: a constant torque opposing motion, expressed as the
+    // voltage it takes to overcome. Without this the wheel settles at over twice the commanded
+    // speed whenever the feedback gain is small.
+    driveSim.setInputVoltage(clampToBattery(driveAppliedVolts - driveFrictionVolts()));
     turnSim.setInputVoltage(clampToBattery(turnAppliedVolts));
     driveSim.update(0.02);
     turnSim.update(0.02);
@@ -114,6 +122,19 @@ public class ModuleIOSim implements ModuleIO {
     inputs.turnVelocityRadPerSec = turnSim.getAngularVelocity();
     inputs.turnAppliedVolts = turnAppliedVolts;
     inputs.turnCurrentAmps = Math.abs(turnSim.getCurrentDraw());
+  }
+
+  /**
+   * The voltage-equivalent of the drive wheel's static friction, opposing whichever way it turns.
+   *
+   * <p>A plain {@code signum} would be the obvious way to write this and is wrong: it flips sign
+   * every timestep once the wheel is nearly stopped, so the wheel chatters around zero and never
+   * actually settles. Blending across a small velocity band removes the discontinuity, at the cost
+   * of letting the last fraction of a rad/s bleed off smoothly rather than stopping dead.
+   */
+  private double driveFrictionVolts() {
+    double omega = driveSim.getAngularVelocity();
+    return driveKs * Math.tanh(omega / FRICTION_BLEND_RAD_PER_SEC);
   }
 
   private static double clampToBattery(double volts) {
