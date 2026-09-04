@@ -3,6 +3,17 @@
 Team 5010's swerve drivetrain, written from scratch against **WPILib 2027.0.0-alpha-7** using the
 **Commands v2** framework and **AdvantageKit** for logging and deterministic replay.
 
+> ### ⚠ This branch does not run on hardware yet
+>
+> REVLib 2027.0.0-alpha-6 — the newest there is — has a native library that cannot link against
+> alpha-7. The JVM dies with a `symbol lookup error` as soon as the first `SparkMax` is
+> constructed, which is not something the robot program can catch. Deploy
+> `claude/swerve-2027-advantagekit` (alpha-6) until REV ships a rebuild; see
+> [docs/UPGRADE-ALPHA7.md](docs/UPGRADE-ALPHA7.md) for the two missing symbols and
+> `tools/check-alpha7-readiness.sh` for when it clears.
+>
+> Everything else on this branch is done and verified: build, tests, simulation and replay.
+
 This replaces the YAGSL-based 2026 project. Every drivetrain number here — CAN IDs, gear ratios,
 encoder offsets, current limits, module positions, feedforward gains — was carried over from that
 project's `deploy/swerve/neo` configuration and its `Constants.java`, so this describes the same
@@ -411,21 +422,20 @@ where both work.
 
 ## Verification status
 
-**This builds and runs on alpha-7.** `./gradlew build` succeeds against the real WPILib 2027
-alpha-7 toolchain and all six unit tests pass; the robot program starts clean in simulation with no
-loop overruns; and an AdvantageKit replay round-trip has been re-verified on alpha-7, producing a
-`_replay.wpilog` with 39 recomputed output keys across all four modules.
+**This builds and simulates on alpha-7, and cannot run on hardware.** `./gradlew build` succeeds
+against the real WPILib 2027 alpha-7 toolchain and all six unit tests pass; the robot program starts
+clean in simulation with no loop overruns; and an AdvantageKit replay round-trip has been re-verified
+on alpha-7, producing a `_replay.wpilog` with 39 recomputed output keys across all four modules.
 
-What has *not* been done: nothing has touched real hardware. `ModuleIOSpark` compiles against REVLib
-2027.0.0-alpha-6 and every call resolves, but no SPARK MAX has answered any of them. Expect the
-usual first-bringup work — encoder directions, absolute offsets, and the PID gains that did not
-transfer from YAGSL.
+**The hardware path is broken, and none of the above could detect it.** Simulation runs through
+`ModuleIOSim`, which never loads REVLib's native libraries, so a green build and a clean sim say
+nothing about whether the SPARK MAXes will work. They will not: `libREVLibWpi.so` is built against
+symbols alpha-7 removed, and constructing a `SparkMax` kills the JVM outright. Measured directly —
+the same `SparkMax` construction plus `configure()` succeeds on alpha-6 and dies on alpha-7.
 
-One alpha-7 caveat specific to hardware: REVLib's only alpha-7-missing class
-(`math.util.Pair`) sits in `com.revrobotics.sim.MovingAverageFilterSim`, reachable only from
-`SparkSim`. Nothing here loads that — simulation goes through `ModuleIOSim`, and the hardware path
-uses `SparkMax` — so it should never throw. The simulation runs above do not exercise that path
-either way, so first hardware bringup is where it is genuinely confirmed.
+Beyond that, nothing has touched real hardware on either branch. No SPARK MAX has answered a single
+call. Expect the usual first-bringup work — encoder directions, absolute offsets, and the PID gains
+that did not transfer from YAGSL.
 
 `./gradlew build`, then `./gradlew simulateJava` to drive it in the simulator. For a headless run,
 `./gradlew installDist` and put `build/install/*/lib/*.jar` on the classpath — alpha-7 no longer

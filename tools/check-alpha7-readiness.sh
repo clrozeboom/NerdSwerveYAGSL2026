@@ -54,6 +54,17 @@ REVLib|https://maven.revrobotics.com/com/revrobotics/frc/REVLib-java|REVLib-java
 Phoenix6|https://maven.ctr-electronics.com/release/com/ctre/phoenix6/wpiapi-java|wpiapi-java|BasicRobotLessons
 PhotonLib|https://maven.photonvision.org/repository/internal/org/photonvision/photonlib-java|photonlib-java|BasicRobotLessons'
 
+# Vendor native libraries that link against WPILib's own, as label|maven base|artifact|platform.
+#
+# The Java class diff below is blind to this, and on 2026-09-02 that blindness cost a day: REVLib
+# was declared clean on class references while its libREVLibWpi.so could not resolve a single
+# symbol against alpha-7. alpha-7 stopped re-exporting fmt (138 symbols in alpha-6, none in
+# alpha-7) and dropped the C++ wpi::util::WaitForObject for the C-ABI WPI_WaitForObject. The JVM
+# binds these lazily, so nothing fails at load — it dies with a process-level "symbol lookup error"
+# the moment the first SparkMax is constructed, which no build and no ModuleIOSim simulation can
+# catch.
+NATIVES='REVLib|https://maven.revrobotics.com/com/revrobotics/frc/RevLibWpiBackendDriver|RevLibWpiBackendDriver|linuxx86-64'
+
 # Missing classes we have analysed and cleared, as label|class|why.
 #
 # A missing class only breaks something if the JVM actually loads the class that references it.
@@ -235,6 +246,68 @@ while IFS='|' read -r label base artifact project; do
     esac
   fi
 done <<< "$VENDORS"
+echo
+
+# --- 3b. Native ABI: do vendor .so files still resolve against alpha-7's shared libraries? ---
+#
+# Downloads WPILib's own native libs, then every vendor native that links against them, and asks
+# the dynamic linker directly. This is a different question from the class diff above and has to be
+# asked separately.
+echo "Vendor native libraries:"
+NATDIR="$WORK/nat"; mkdir -p "$NATDIR"
+WPI_NAT_OK=1
+for a in wpiutil/wpiutil-cpp wpinet/wpinet-cpp ntcore/ntcore-cpp hal/hal-cpp datalog/datalog-cpp; do
+  name="${a##*/}"
+  z="$WORK/n.zip"
+  curl -sSL --max-time 300 -o "$z" \
+    "$WPI_MVN/$a/$WPI_LATEST/$name-$WPI_LATEST-linuxx86-64.zip" 2>/dev/null || { WPI_NAT_OK=0; continue; }
+  unzip -qo "$z" -d "$WORK/nx" 2>/dev/null || WPI_NAT_OK=0
+done
+find "$WORK/nx" -name '*.so' -exec cp {} "$NATDIR"/ \; 2>/dev/null
+WPI_SO_COUNT=$(ls "$NATDIR"/*.so 2>/dev/null | wc -l)
+
+if [ "$WPI_NAT_OK" -eq 0 ] || [ "$WPI_SO_COUNT" -lt 3 ]; then
+  echo "  could not assemble alpha-7 native libs — native ABI unverified"
+else
+  while IFS='|' read -r label base artifact platform; do
+    [ -n "$label" ] || continue
+    nver=$(latest_version "$base")
+    if [ -z "$nver" ]; then
+      printf '  %-13s %-31s native artifact unreachable — ABI unverified\n' "$label" "<unknown>"
+      continue
+    fi
+    z="$WORK/v.zip"; vdir="$WORK/vnat"; rm -rf "$vdir"; mkdir -p "$vdir"
+    if ! curl -sSL --max-time 300 -o "$z" \
+        "$base/$nver/$artifact-$nver-$platform.zip" 2>/dev/null \
+       || ! unzip -qo "$z" -d "$vdir" 2>/dev/null; then
+      printf '  %-13s %-31s native artifact unreachable — ABI unverified\n' "$label" "$nver"
+      continue
+    fi
+    find "$vdir" -name '*.so' -exec cp {} "$NATDIR"/ \; 2>/dev/null
+    # Collect into a file rather than a variable: these are C++ mangled names, and feeding them
+    # back through printf as a format string mangles them a second time.
+    badf="$WORK/bad.txt"; : > "$badf"
+    for so in $(find "$vdir" -name '*.so'); do
+      u=$( (cd "$NATDIR" && LD_LIBRARY_PATH=. ldd -r "$(basename "$so")" 2>&1) \
+           | sed -n 's/^undefined symbol: \([^\t ]*\).*/\1/p' | sort -u)
+      if [ -n "$u" ]; then
+        echo "$(basename "$so"):" >> "$badf"
+        echo "$u" | c++filt 2>/dev/null | sed 's/^/      /' >> "$badf"
+      fi
+    done
+    if [ ! -s "$badf" ]; then
+      printf '  %-13s %-31s [%s] native ABI OK against alpha-7\n' "$label" "$nver" "$platform"
+    else
+      printf '  %-13s %-31s [%s] NATIVE ABI BROKEN against alpha-7:\n' "$label" "$nver" "$platform"
+      sed 's/^/    /' "$badf"
+      case "$label" in
+        REVLib|AdvantageKit) BLOCKED_NERD="$BLOCKED_NERD $label(native)" ;;
+        *)                   BLOCKED_LESSONS="$BLOCKED_LESSONS $label(native)" ;;
+      esac
+      SUMMARY="$SUMMARY$label $nver native-broken; "
+    fi
+  done <<< "$NATIVES"
+fi
 echo
 
 # --- 4. The rest, for context ---

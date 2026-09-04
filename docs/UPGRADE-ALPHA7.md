@@ -1,7 +1,34 @@
 # Upgrading to WPILib 2027.0.0-alpha-7
 
-Status: **done, 2026-09-02.** AdvantageKit 27.0.0-alpha-5 shipped clean against alpha-7 and cleared
-the hard blocker; the migration was carried out the same day on `claude/swerve-2027-alpha7`.
+Status: **migrated but NOT deployable, 2026-09-02.** The code move to alpha-7 is done on
+`claude/swerve-2027-alpha7` and builds, tests and replays cleanly. It will **not run on the
+robot**: REVLib 2027.0.0-alpha-6's native library cannot link against alpha-7.
+
+> **Do not deploy `claude/swerve-2027-alpha7` to hardware.** The JVM dies with a process-level
+> `symbol lookup error` the moment the first `SparkMax` is constructed — not an exception a robot
+> program can catch or recover from. `claude/swerve-2027-advantagekit` (alpha-6) remains the
+> deployable branch until REV ships a rebuild.
+
+### The native ABI break
+
+alpha-7 changed WPILib's C++ ABI in two ways REVLib's `libREVLibWpi.so` depends on:
+
+| Symbol | alpha-6 | alpha-7 |
+| --- | --- | --- |
+| `fmt::v12::vformat[abi:cxx11](...)` | exported (138 `fmt::` symbols in `libwpiutil.so`) | **gone — zero `fmt::` symbols exported** |
+| `wpi::util::WaitForObject(unsigned int)` | exported | **gone** — only the C-ABI `WPI_WaitForObject` remains |
+
+The JVM binds these lazily, which is why nothing looked wrong: `System.load` succeeds, the build is
+green, and a simulation run that goes through `ModuleIOSim` never touches REVLib's natives at all.
+The failure only appears when the hardware path actually calls into the library.
+
+Verified both directions on 2026-09-02 — constructing a `SparkMax` and calling `configure()`
+succeeds on alpha-6 and kills the JVM on alpha-7.
+
+**This was missed the first time because the readiness check only diffed Java class references.**
+A vendor can be perfectly clean at the class level and still be unusable. `tools/check-alpha7-readiness.sh`
+now also downloads each vendor's native artifact and asks the dynamic linker directly, which is the
+check that would have caught it.
 
 This document is kept as the record of what the upgrade involved. The parts that turned out to be
 wrong or incomplete when actually executed are marked below — the plan predicted six files and three
