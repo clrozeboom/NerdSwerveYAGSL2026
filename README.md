@@ -57,6 +57,16 @@ world, but `org.wpilib.smartdashboard` still ships `Field2d`, `FieldObject2d` an
 `Mechanism2d` family. Only the plumbing it published *through* went away — it implements
 `TelemetryLoggable` now, so `Telemetry.log("Field", field)` takes it directly.
 
+Two things about that call are easy to get wrong, and this project got both wrong first time round:
+
+- **`Telemetry.log` is a one-shot write, not a registration.** `SmartDashboard.putData` handed the
+  dashboard a `Sendable` once and let it poll every cycle; `TelemetryRegistry` has no equivalent, so
+  the call has to be in the loop. Publishing it from the constructor — the natural translation —
+  publishes the pose the robot booted at and never updates it again. Measured: one write ever,
+  against 80 writes over 80 loops once moved into `periodic()`.
+- **The NetworkTables path moved.** It publishes to **`/Telemetry/Field`**, not
+  `/SmartDashboard/Field`. A dashboard still pointed at the old path shows nothing.
+
 **The chooser went to AdvantageKit, not to WPILib.** `org.wpilib.tunable.Selectable` +
 `Tunables.publish` is the stock replacement, but `LoggedNetworkChooser` wraps a `Selectable`
 underneath and additionally writes the selection to the log and feeds it back on replay — which

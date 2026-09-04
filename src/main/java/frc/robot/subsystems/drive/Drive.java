@@ -1,9 +1,7 @@
 // Copyright (c) FIRST and other WPILib contributors.
 // Open Source Software; you can modify and/or share it under the terms of
 // the WPILib BSD license file in the root directory of this project.
-
 package frc.robot.subsystems.drive;
-
 import frc.robot.Constants;
 import frc.robot.util.TunableNumber;
 import org.littletonrobotics.junction.Logger;
@@ -18,7 +16,6 @@ import org.wpilib.math.kinematics.SwerveModuleVelocity;
 import org.wpilib.smartdashboard.Field2d;
 import org.wpilib.telemetry.Telemetry;
 import org.wpilib.system.Timer;
-
 /**
  * Four-module swerve drivetrain.
  *
@@ -32,19 +29,14 @@ import org.wpilib.system.Timer;
  */
 public class Drive extends SubsystemBase {
   private static final String[] MODULE_NAMES = {"FrontLeft", "FrontRight", "BackLeft", "BackRight"};
-
   /** Matches TimedRobot's default period; used to discretize commanded velocities. */
   private static final double LOOP_PERIOD_SECS = 0.02;
-
   private final GyroIO gyroIO;
   private final GyroIOInputsAutoLogged gyroInputs = new GyroIOInputsAutoLogged();
   private final Module[] modules = new Module[4];
-
   private final SwerveDriveKinematics kinematics =
       new SwerveDriveKinematics(Constants.Drivebase.MODULE_TRANSLATIONS);
-
   private final Field2d field = new Field2d();
-
   /**
    * Live speed cap, in m/s. Separate from a gain: this is the number that decides how fast the
    * robot is allowed to go, and during bring-up it wants changing far more often than anything
@@ -53,18 +45,14 @@ public class Drive extends SubsystemBase {
    */
   private final TunableNumber maxLinearSpeed =
       new TunableNumber("Tuning/Drive/MaxLinearSpeedMps", Constants.Drivebase.MAX_LINEAR_SPEED);
-
   /** Heading used for field-relative driving and odometry. */
   private Rotation2d rawGyroRotation = Rotation2d.ZERO;
-
   /** Module positions as of the previous loop, used to integrate heading when there is no gyro. */
   private SwerveModulePosition[] lastModulePositions = {
     new SwerveModulePosition(), new SwerveModulePosition(),
     new SwerveModulePosition(), new SwerveModulePosition()
   };
-
   private Pose2d pose = Pose2d.ZERO;
-
   public Drive(
       GyroIO gyroIO,
       ModuleIO frontLeft,
@@ -78,12 +66,7 @@ public class Drive extends SubsystemBase {
     modules[1] = new Module(frontRight, MODULE_NAMES[1], Constants.ModuleConfig.ORDERED[1]);
     modules[2] = new Module(backLeft, MODULE_NAMES[2], Constants.ModuleConfig.ORDERED[2]);
     modules[3] = new Module(backRight, MODULE_NAMES[3], Constants.ModuleConfig.ORDERED[3]);
-
-    // Field2d itself survived alpha-7; only the Sendable plumbing it used to publish through
-    // went away. It implements TelemetryLoggable now, so Telemetry.log takes it directly.
-    Telemetry.log("Field", field);
   }
-
   @Override
   public void periodic() {
     // Read every input first, so the rest of the loop works from one consistent snapshot. This is
@@ -94,9 +77,7 @@ public class Drive extends SubsystemBase {
     for (Module module : modules) {
       module.updateInputs();
     }
-
     updateOdometry();
-
     Logger.recordOutput("Drive/GyroConnected", gyroInputs.connected);
     Logger.recordOutput("Drive/HeadingDeg", getRotation().getDegrees());
     Logger.recordOutput("Drive/PoseX", pose.getX());
@@ -106,14 +87,17 @@ public class Drive extends SubsystemBase {
     Logger.recordOutput("Drive/MeasuredVy", measured.vy);
     Logger.recordOutput("Drive/MeasuredOmega", measured.omega);
     field.setRobotPose(pose);
+    // Telemetry.log is a one-shot write, not a registration, so this belongs in the loop rather
+    // than the constructor. SmartDashboard.putData used to take a Sendable once and have the
+    // dashboard poll it every cycle; alpha-7 deleted that machinery and TelemetryRegistry has no
+    // equivalent, so publishing once only ever showed the pose the robot started at.
+    Telemetry.log("Field", field);
   }
-
   private void updateOdometry() {
     SwerveModulePosition[] positions = getModulePositions();
     // How far the chassis moved and rotated since the last loop, derived from how far each wheel
     // rolled and which way it was pointing.
     Twist2d twist = kinematics.toTwist2d(lastModulePositions, positions);
-
     Rotation2d newRotation;
     if (gyroInputs.connected) {
       newRotation = gyroInputs.yawPosition;
@@ -122,18 +106,15 @@ public class Drive extends SubsystemBase {
       // field-relative driving usable until a gyro is wired up.
       newRotation = rawGyroRotation.plus(new Rotation2d(twist.dtheta));
     }
-
     // Integrate translation using the heading change we actually believe rather than the one the
     // wheels implied, so that with a gyro connected the pose's position and rotation stay
     // consistent with each other. This is what WPILib's own SwerveDriveOdometry does.
     twist.dtheta = newRotation.minus(rawGyroRotation).getRadians();
     pose = pose.plus(twist.exp());
     pose = new Pose2d(pose.getTranslation(), newRotation);
-
     rawGyroRotation = newRotation;
     lastModulePositions = positions;
   }
-
   /**
    * Drives the robot at the given chassis velocities, in robot-relative terms.
    *
@@ -149,21 +130,17 @@ public class Drive extends SubsystemBase {
     SwerveModuleVelocity[] setpoints =
         SwerveDriveKinematics.desaturateWheelVelocities(
             kinematics.toSwerveModuleVelocities(discretized), getMaxLinearSpeed());
-
     for (int i = 0; i < modules.length; i++) {
       modules[i].runSetpoint(setpoints[i]);
     }
-
     Logger.recordOutput("Drive/SetpointVx", discretized.vx);
     Logger.recordOutput("Drive/SetpointVy", discretized.vy);
     Logger.recordOutput("Drive/SetpointOmega", discretized.omega);
   }
-
   /** Stops all four modules where they are. */
   public void stop() {
     runVelocity(new ChassisVelocities());
   }
-
   /**
    * Stops and points the modules into an X, so the robot resists being pushed. The angles come from
    * each module's position relative to robot centre.
@@ -174,14 +151,12 @@ public class Drive extends SubsystemBase {
       modules[i].runSetpoint(new SwerveModuleVelocity(0.0, angle));
     }
   }
-
   /** Runs every drive motor open-loop at the same voltage, for feedforward characterization. */
   public void runCharacterization(double volts) {
     for (Module module : modules) {
       module.runCharacterization(volts);
     }
   }
-
   /**
    * Runs every drive motor open-loop with the modules pointed tangentially, so the robot spins in
    * place instead of driving in a straight line.
@@ -199,7 +174,6 @@ public class Drive extends SubsystemBase {
       modules[i].runCharacterizationDriveOnly(volts);
     }
   }
-
   /**
    * The heading that points a module along its circle about robot centre — its position angle turned
    * a quarter turn. Driving all four at this angle spins the robot counter-clockwise.
@@ -207,7 +181,6 @@ public class Drive extends SubsystemBase {
   static Rotation2d tangentAngle(int moduleIndex) {
     return moduleAngle(moduleIndex).plus(Rotation2d.CCW_PI_2);
   }
-
   /**
    * The direction from robot centre out to a module.
    *
@@ -223,7 +196,6 @@ public class Drive extends SubsystemBase {
         .orElseThrow(
             () -> new IllegalStateException("Module " + moduleIndex + " is at robot centre"));
   }
-
   /**
    * Commands one wheel speed to all four modules with the modules pointed tangentially, spinning the
    * robot in place. The spin step response uses this to tune drive kP in a small space.
@@ -240,7 +212,6 @@ public class Drive extends SubsystemBase {
         "Tuning/SpinSetpointRobotRadPerSec",
         velocityRadPerSec * Constants.Module.WHEEL_RADIUS / Constants.Drivebase.DRIVE_BASE_RADIUS);
   }
-
   /**
    * Points all four modules at one angle without moving the wheels. The turn step-response test uses
    * this: step the angle, then watch setpoint against measured to judge turn kP.
@@ -254,7 +225,6 @@ public class Drive extends SubsystemBase {
     }
     Logger.recordOutput("Tuning/TurnSetpointDeg", angle.getDegrees());
   }
-
   /**
    * Commands one wheel speed to all four modules with the modules held straight. The drive step test
    * uses this to judge drive kP against a square-wave setpoint.
@@ -270,7 +240,6 @@ public class Drive extends SubsystemBase {
     Logger.recordOutput(
         "Tuning/DriveSetpointMetersPerSec", velocityRadPerSec * Constants.Module.WHEEL_RADIUS);
   }
-
   /** Average measured wheel speed across the four modules, in rad/s. Pairs with the step test. */
   public double getAverageWheelVelocityRadPerSec() {
     double sum = 0.0;
@@ -279,12 +248,10 @@ public class Drive extends SubsystemBase {
     }
     return sum / modules.length;
   }
-
   /** The four modules, so bring-up routines can address them individually. */
   public Module[] getModules() {
     return modules;
   }
-
   /** Average wheel travel across the four modules, in radians. Pairs with SysId data. */
   public double getCharacterizationPosition() {
     double sum = 0.0;
@@ -293,7 +260,6 @@ public class Drive extends SubsystemBase {
     }
     return sum / modules.length;
   }
-
   /**
    * Declares that all four modules are currently pointing straight forward.
    *
@@ -307,14 +273,12 @@ public class Drive extends SubsystemBase {
     }
     Logger.recordOutput("Tuning/ModulesZeroedAt", Timer.getMonotonicTimestamp());
   }
-
   /** Switches all four drive motors between brake and coast. */
   public void setBrakeMode(boolean enabled) {
     for (Module module : modules) {
       module.setBrakeMode(enabled);
     }
   }
-
   /** Current wheel travel and heading for each module, in FL, FR, BL, BR order. */
   public SwerveModulePosition[] getModulePositions() {
     SwerveModulePosition[] positions = new SwerveModulePosition[modules.length];
@@ -323,7 +287,6 @@ public class Drive extends SubsystemBase {
     }
     return positions;
   }
-
   /** Current wheel speed and heading for each module, in FL, FR, BL, BR order. */
   public SwerveModuleVelocity[] getModuleVelocities() {
     SwerveModuleVelocity[] velocities = new SwerveModuleVelocity[modules.length];
@@ -332,41 +295,34 @@ public class Drive extends SubsystemBase {
     }
     return velocities;
   }
-
   /** Chassis velocity as measured by the modules, robot-relative. */
   public ChassisVelocities getChassisVelocities() {
     return kinematics.toChassisVelocities(getModuleVelocities());
   }
-
   /** Robot heading, from the gyro when present and from the modules when not. */
   public Rotation2d getRotation() {
     return rawGyroRotation;
   }
-
   /** Current pose estimate. */
   public Pose2d getPose() {
     return pose;
   }
-
   /** Overwrites the pose estimate, e.g. at the start of an autonomous routine. */
   public void setPose(Pose2d newPose) {
     pose = newPose;
     rawGyroRotation = newPose.getRotation();
     lastModulePositions = getModulePositions();
   }
-
   /** Zeroes the heading so that the direction the robot currently faces becomes "forward". */
   public void zeroHeading() {
     gyroIO.resetYaw();
     rawGyroRotation = Rotation2d.ZERO;
     pose = new Pose2d(pose.getTranslation(), Rotation2d.ZERO);
   }
-
   /** The speed cap the drivetrain is currently obeying, in m/s. */
   public double getMaxLinearSpeed() {
     return maxLinearSpeed.get();
   }
-
   /**
    * The turn-rate cap that goes with {@link #getMaxLinearSpeed()}, in rad/s.
    *
@@ -378,12 +334,10 @@ public class Drive extends SubsystemBase {
   public double getMaxAngularSpeed() {
     return getMaxLinearSpeed() / Constants.Drivebase.DRIVE_BASE_RADIUS;
   }
-
   /** The drivetrain's kinematics, exposed for path-following code added later. */
   public SwerveDriveKinematics getKinematics() {
     return kinematics;
   }
-
   /** True when all four modules are reporting healthy. */
   public boolean allModulesConnected() {
     for (Module module : modules) {
