@@ -224,13 +224,28 @@ becomes a convenience rather than a requirement.
 These were carried across verbatim because they describe the existing robot, but they looked unusual
 on the way over:
 
-- **`MAX_LINEAR_SPEED` is 1 ft/s (~0.3 m/s).** That is the YAGSL project's `MAX_SPEED` unchanged — a
-  deliberately crawling value. A NEO swerve module will do roughly 4–5 m/s. `MAX_ANGULAR_SPEED`
-  scales off this, so raising one raises both.
+- **`MAX_LINEAR_SPEED` defaults to 1 ft/s (~0.3 m/s).** That is the YAGSL project's `MAX_SPEED`
+  unchanged — a deliberate crawl, against the 4–5 m/s a NEO swerve module will do. It is now the
+  *default* behind `Drive.getMaxLinearSpeed()`, which reads a `TunableNumber` at
+  `Tuning/Drive/MaxLinearSpeedMps`, so the cap can be raised live from the dashboard during
+  bring-up. The turn-rate cap is derived from it, so raising one raises both. Once you settle on a
+  speed, put it in `Constants` so the robot boots with it.
 - **Drive gear ratio 1.36 with a 2 in wheel.** Most swerve modules are between 4:1 and 8:1. Worth
   confirming against the physical module before driving at speed.
-- **PID gains do not transfer.** `DRIVE_KP` and `TURN_KP` came from the YAGSL config, but YAGSL ran
-  its loops in different units than this project does. They are starting points, not a tune.
+- **PID gains did not transfer, and the carry-overs were replaced.** The YAGSL values (`DRIVE_KP`
+  0.001, `TURN_KP` 0.01) were not merely untuned — in this project's units they were close to zero.
+  Measured in simulation, a 12 rad/s wheel command settled at 27 rad/s and took 23.8 s to stop
+  after the stick was released, and a commanded 90° module turn reached 6.8° after three seconds.
+  They are now `DRIVE_KP` 0.2 and `TURN_KP` 2.0, which give a clean step with no overshoot
+  (drive 95% in 1.08 s, turn 90° in 0.52 s) and stop the wheel in 0.8 s. Simulation has none of the
+  latency or backlash real hardware does, so these are starting points with margin — raise them
+  from the dashboard, then write back what works.
+
+  **Gains here are in volts per unit of error.** `ModuleIOSim` applies that directly; a SPARK MAX
+  closed loop works in duty cycle instead, so `ModuleIOSpark` divides by `NOMINAL_VOLTAGE` on the
+  way in. Skip that conversion and every gain is 12× too aggressive on the robot while looking
+  perfect in simulation — `GainUnitsTest` guards it. The arbitrary feedforward is *not* converted:
+  REVLib already takes that in volts.
 - **Feedforward gains do transfer**, since they are physical — but they were measured in volts per
   m/s, so `Constants.Module` converts them to volts per wheel-rad/s. The originals are kept as
   `DRIVE_KV_PER_METER_PER_SEC` / `DRIVE_KA_PER_METER_PER_SEC2`.
@@ -319,8 +334,8 @@ A space about **4 m long by 2 m wide** covers everything comfortably. In a small
 `Constants.SysId.QUASISTATIC_TIMEOUT_SECS` — distance scales with roughly its square, so 4 s → 3 s
 takes the quasistatic run from ~2.3 m to ~1.2 m.
 
-Note the tuning routines command the modules directly and **bypass** `MAX_LINEAR_SPEED`, so the 1
-ft/s teleop cap does not apply to them.
+Note the tuning routines command the modules directly and **bypass** the speed cap, so whatever
+`Tuning/Drive/MaxLinearSpeedMps` is set to does not apply to them.
 
 ### Per-module feedforward
 

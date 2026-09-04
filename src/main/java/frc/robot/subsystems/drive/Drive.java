@@ -5,6 +5,7 @@
 package frc.robot.subsystems.drive;
 
 import frc.robot.Constants;
+import frc.robot.util.TunableNumber;
 import org.littletonrobotics.junction.Logger;
 import org.wpilib.command2.SubsystemBase;
 import org.wpilib.math.geometry.Pose2d;
@@ -43,6 +44,15 @@ public class Drive extends SubsystemBase {
       new SwerveDriveKinematics(Constants.Drivebase.MODULE_TRANSLATIONS);
 
   private final Field2d field = new Field2d();
+
+  /**
+   * Live speed cap, in m/s. Separate from a gain: this is the number that decides how fast the
+   * robot is allowed to go, and during bring-up it wants changing far more often than anything
+   * else — start at a crawl, raise it as the drivetrain earns trust. With tuning mode off it is
+   * exactly {@link Constants.Drivebase#MAX_LINEAR_SPEED} and no dashboard entry exists.
+   */
+  private final TunableNumber maxLinearSpeed =
+      new TunableNumber("Tuning/Drive/MaxLinearSpeedMps", Constants.Drivebase.MAX_LINEAR_SPEED);
 
   /** Heading used for field-relative driving and odometry. */
   private Rotation2d rawGyroRotation = Rotation2d.ZERO;
@@ -138,8 +148,7 @@ public class Drive extends SubsystemBase {
     // scaling the one passed in, so the result has to be assigned.
     SwerveModuleVelocity[] setpoints =
         SwerveDriveKinematics.desaturateWheelVelocities(
-            kinematics.toSwerveModuleVelocities(discretized),
-            Constants.Drivebase.MAX_LINEAR_SPEED);
+            kinematics.toSwerveModuleVelocities(discretized), getMaxLinearSpeed());
 
     for (int i = 0; i < modules.length; i++) {
       modules[i].runSetpoint(setpoints[i]);
@@ -351,6 +360,23 @@ public class Drive extends SubsystemBase {
     gyroIO.resetYaw();
     rawGyroRotation = Rotation2d.ZERO;
     pose = new Pose2d(pose.getTranslation(), Rotation2d.ZERO);
+  }
+
+  /** The speed cap the drivetrain is currently obeying, in m/s. */
+  public double getMaxLinearSpeed() {
+    return maxLinearSpeed.get();
+  }
+
+  /**
+   * The turn-rate cap that goes with {@link #getMaxLinearSpeed()}, in rad/s.
+   *
+   * <p>Derived rather than tuned separately: a module on the corner of the drivebase travels
+   * {@code DRIVE_BASE_RADIUS} metres per radian of robot rotation, so this is the fastest the robot
+   * can spin without asking a wheel to exceed the linear cap. Deriving it means raising the speed
+   * on the dashboard raises the turn rate with it, instead of leaving the two inconsistent.
+   */
+  public double getMaxAngularSpeed() {
+    return getMaxLinearSpeed() / Constants.Drivebase.DRIVE_BASE_RADIUS;
   }
 
   /** The drivetrain's kinematics, exposed for path-following code added later. */

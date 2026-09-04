@@ -43,9 +43,9 @@ public final class DriveCommands {
 
           ChassisVelocities fieldRelative =
               new ChassisVelocities(
-                  linear.getX() * Constants.Drivebase.MAX_LINEAR_SPEED,
-                  linear.getY() * Constants.Drivebase.MAX_LINEAR_SPEED,
-                  omega * Constants.Drivebase.MAX_ANGULAR_SPEED);
+                  linear.getX() * drive.getMaxLinearSpeed(),
+                  linear.getY() * drive.getMaxLinearSpeed(),
+                  omega * drive.getMaxAngularSpeed());
 
           drive.runVelocity(fieldRelative.toRobotRelative(drive.getRotation()));
         },
@@ -74,9 +74,9 @@ public final class DriveCommands {
 
           drive.runVelocity(
               new ChassisVelocities(
-                  linear.getX() * Constants.Drivebase.MAX_LINEAR_SPEED,
-                  linear.getY() * Constants.Drivebase.MAX_LINEAR_SPEED,
-                  omega * Constants.Drivebase.MAX_ANGULAR_SPEED));
+                  linear.getX() * drive.getMaxLinearSpeed(),
+                  linear.getY() * drive.getMaxLinearSpeed(),
+                  omega * drive.getMaxAngularSpeed()));
         },
         drive);
   }
