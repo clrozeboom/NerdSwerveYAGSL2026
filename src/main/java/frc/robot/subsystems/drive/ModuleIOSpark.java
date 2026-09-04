@@ -61,6 +61,26 @@ public class ModuleIOSpark implements ModuleIO {
   private double driveKs = Constants.Module.DRIVE_KS;
   private double driveKv = Constants.Module.DRIVE_KV;
 
+  /**
+   * Converts a gain expressed in volts per unit of error into the duty cycle a SPARK MAX closed
+   * loop wants.
+   *
+   * <p>This project states its PID gains in volts per unit of error, because that is what
+   * {@code ModuleIOSim} applies and what makes a gain comparable between the two IO layers. A SPARK
+   * MAX closed loop does not work in volts: its output is a duty cycle in [-1, 1], which
+   * {@link Constants.Module#NOMINAL_VOLTAGE} voltage compensation then maps onto that many volts.
+   * Passing a volts-shaped gain straight through would therefore be {@code NOMINAL_VOLTAGE} times
+   * too aggressive — a kP tuned to a well-behaved step in simulation would saturate the controller
+   * on the robot.
+   *
+   * <p>The arbitrary feedforward is <i>not</i> converted: REVLib takes that in volts already
+   * (the four-argument {@code setSetpoint} defaults to {@code ArbFFUnits.kVoltage}), which is why
+   * {@link #setDriveVelocity(double)} passes it through untouched.
+   */
+  static double voltsPerErrorToDuty(double gain) {
+    return gain / Constants.Module.NOMINAL_VOLTAGE;
+  }
+
   public ModuleIOSpark(ModuleConfig config) {
     driveSpark = new SparkMax(Constants.Module.CAN_BUS_ID, config.driveCanId, MotorType.kBrushless);
     turnSpark = new SparkMax(Constants.Module.CAN_BUS_ID, config.turnCanId, MotorType.kBrushless);
@@ -84,7 +104,10 @@ public class ModuleIOSpark implements ModuleIO {
         .openLoopRampRate(Constants.Module.DRIVE_RAMP_RATE);
     driveConfig.encoder.positionConversionFactor(DRIVE_POSITION_FACTOR);
     driveConfig.encoder.velocityConversionFactor(DRIVE_VELOCITY_FACTOR);
-    driveConfig.closedLoop.pid(Constants.Module.DRIVE_KP, 0.0, Constants.Module.DRIVE_KD);
+    driveConfig.closedLoop.pid(
+        voltsPerErrorToDuty(Constants.Module.DRIVE_KP),
+        0.0,
+        voltsPerErrorToDuty(Constants.Module.DRIVE_KD));
     driveSpark.configure(driveConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     SparkMaxConfig turnConfig = new SparkMaxConfig();
@@ -98,7 +121,10 @@ public class ModuleIOSpark implements ModuleIO {
     // The module wraps, so let the controller take the short way round rather than unwinding.
     turnConfig.closedLoop.positionWrappingEnabled(true);
     turnConfig.closedLoop.positionWrappingInputRange(-Math.PI, Math.PI);
-    turnConfig.closedLoop.pid(Constants.Module.TURN_KP, 0.0, Constants.Module.TURN_KD);
+    turnConfig.closedLoop.pid(
+        voltsPerErrorToDuty(Constants.Module.TURN_KP),
+        0.0,
+        voltsPerErrorToDuty(Constants.Module.TURN_KD));
     turnSpark.configure(turnConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     // With an absolute encoder the module can work out where it is pointing on its own. Without one
@@ -180,7 +206,7 @@ public class ModuleIOSpark implements ModuleIO {
     driveKs = kS;
     driveKv = kV;
     SparkMaxConfig config = new SparkMaxConfig();
-    config.closedLoop.pid(kP, 0.0, kD);
+    config.closedLoop.pid(voltsPerErrorToDuty(kP), 0.0, voltsPerErrorToDuty(kD));
     // kNoPersistParameters so a tuning session does not burn every edit to flash; once the numbers
     // are settled they belong in Constants, not in the controller's memory.
     driveSpark.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
@@ -189,7 +215,7 @@ public class ModuleIOSpark implements ModuleIO {
   @Override
   public void setTurnGains(double kP, double kD) {
     SparkMaxConfig config = new SparkMaxConfig();
-    config.closedLoop.pid(kP, 0.0, kD);
+    config.closedLoop.pid(voltsPerErrorToDuty(kP), 0.0, voltsPerErrorToDuty(kD));
     turnSpark.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
   }
 

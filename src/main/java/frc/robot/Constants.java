@@ -91,15 +91,16 @@ public final class Constants {
     public static final double DRIVE_BASE_RADIUS = Math.hypot(TRACK_RADIUS_X, TRACK_RADIUS_Y);
 
     /**
-     * Maximum linear speed. Carried over verbatim from the YAGSL project's {@code MAX_SPEED}, which
-     * was {@code Units.feetToMeters(1)} — about 0.3 m/s. That is a deliberately crawling value; a
-     * real NEO swerve module is capable of roughly 4-5 m/s. Raise this once the drivetrain is
-     * trusted, and note that MAX_ANGULAR_SPEED below scales with it.
+     * Default maximum linear speed, in m/s.
+     *
+     * <p>Carried over verbatim from the YAGSL project's {@code MAX_SPEED}, which was one foot per
+     * second — a deliberate crawl, against the 4-5 m/s a real NEO swerve module is capable of. It
+     * is the <i>default</i> rather than the limit: {@link
+     * frc.robot.subsystems.drive.Drive#getMaxLinearSpeed()} wraps it in a tunable so the cap can be
+     * raised from the dashboard during bring-up without a redeploy. Change this once a speed has
+     * been settled on, so the robot boots with it.
      */
     public static final double MAX_LINEAR_SPEED = Units.feetToMeters(1);
-
-    /** Maximum turn rate, derived from the linear speed and the drive base radius. */
-    public static final double MAX_ANGULAR_SPEED = MAX_LINEAR_SPEED / DRIVE_BASE_RADIUS;
 
     /** Robot mass, from the previous Constants.java: (148 lb - 20.3 lb) converted to kg. */
     public static final double ROBOT_MASS_KG = (148 - 20.3) * 0.453592;
@@ -163,14 +164,20 @@ public final class Constants {
     public static final int CAN_BUS_ID = 0;
 
     /**
-     * Drive velocity gains, carried over from the YAGSL pidfproperties {@code drive} block.
+     * Drive velocity gain, in <b>volts per wheel radian per second</b> of error.
      *
-     * <p>Treat these as a starting point, not a tune. PID gains only mean anything relative to the
-     * units their controller works in, and YAGSL ran its drive loop on the SPARK MAX in motor
-     * rotations while this project closes the loop in wheel radians per second. The number is here
-     * so nothing is silently invented; expect to re-tune it on the real robot.
+     * <p>The unit matters more than the number. Both IO layers take these gains in volts per unit
+     * of error: {@code ModuleIOSim} feeds the controller output straight in as volts, and
+     * {@code ModuleIOSpark} converts to the duty cycle a SPARK MAX closed loop actually wants. Give
+     * a SPARK a volts-shaped gain directly and it is {@link #NOMINAL_VOLTAGE} times too aggressive.
+     *
+     * <p>The YAGSL carry-over here was 0.001, which is not a tune at all in these units — it gives
+     * 0.012 V of authority at full speed, so the wheel neither reached its setpoint nor stopped
+     * when asked. 0.2 reaches 95% of a step in 1.08 s with no overshoot in simulation. Simulation
+     * has none of the latency or backlash real hardware does, so treat this as a starting point
+     * with margin and raise it from the dashboard.
      */
-    public static final double DRIVE_KP = 0.001;
+    public static final double DRIVE_KP = 0.2;
 
     public static final double DRIVE_KD = 0.0;
 
@@ -200,9 +207,14 @@ public final class Constants {
 
     /**
      * Turn position gains, carried over from the YAGSL pidfproperties {@code angle} block. The same
-     * unit caveat as {@link #DRIVE_KP} applies — this loop runs in module radians here.
+     * unit caveat as {@link #DRIVE_KP} applies — volts per radian of error, and this loop runs in
+     * module radians.
+     *
+     * <p>The YAGSL carry-over was 0.01, which left a commanded 90 degree module turn sitting at
+     * 6.8 degrees three seconds later; the modules effectively did not steer. 2.0 completes the
+     * same step in 0.52 s with no overshoot in simulation.
      */
-    public static final double TURN_KP = 0.01;
+    public static final double TURN_KP = 2.0;
 
     public static final double TURN_KD = 0.0;
 
