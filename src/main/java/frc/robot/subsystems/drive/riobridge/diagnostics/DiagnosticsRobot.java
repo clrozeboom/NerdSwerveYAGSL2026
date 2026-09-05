@@ -105,6 +105,10 @@ public class DiagnosticsRobot extends TimedRobot {
         rioBridgeCan.overflowCount() > 0 || rioBridgeCan.malformedFrameCount() > 0
             ? "  <-- frames have been DROPPED or discarded, not just delayed"
             : "");
+    if (rioBridgeCan.malformedFrameCount() > 0) {
+      System.out.println(
+          "    last malformed frame: " + rioBridgeCan.lastMalformedFrameDescription());
+    }
 
     attitudeFramesSinceLastPrint = 0;
     previousDrivetrainReading = drivetrain;

@@ -26,15 +26,27 @@ import org.wpilib.hardware.hal.can.CANStreamMessage;
  * either javadoc.
  *
  * <p><b>A message can match one of the three arbitration IDs and still not be shaped like that
- * frame -- confirmed on real hardware, not theoretical.</b> A live run hit an Encoders-ID message
- * with {@code message.length == 0} (an {@code IllegalArgumentException: expected 8 bytes, got 0}
- * out of {@code CanFrames.unpackEncoders}, unhandled, which killed the whole robot program). This
- * is the third real, hardware-found rough edge in this exact {@code readCANStreamSession} code
- * path, after the timestamp-unit ambiguity above and {@link RioBridgeCan}'s overflow-segfault --
- * treat the whole stream session API as one that can hand back malformed data on this WPILib
- * build, not just correctly-shaped frames with the wrong content. {@link #accept} now drops a
- * frame that fails to unpack instead of letting the exception escape, the same "don't throw out
- * of a periodic loop" call already made below for an unrecognized arbitration ID entirely.
+ * frame -- confirmed on real hardware, and confirmed systemic, not a rare edge case.</b> A live
+ * run hit this on essentially every frame (a malformed count climbing by ~220/sec, matching the
+ * protocol's entire combined rate, with zero Attitude samples getting through) -- not the
+ * occasional bad frame the first sighting looked like. {@link #accept} drops a frame that fails
+ * to unpack instead of letting the {@code IllegalArgumentException} escape and kill the whole
+ * robot program (the same "don't throw out of a periodic loop" call already made below for an
+ * unrecognized arbitration ID entirely), but that's damage control, not a fix -- at this rate,
+ * essentially no real RioBridge data is reaching the Core. Leading hypothesis, not yet confirmed:
+ * {@code TimestampUnitsCheck} -- the one piece of this whole investigation that has actually
+ * worked against a real stream session -- only ever reads {@link CANStreamMessage#timestamp}; it
+ * never touches {@code .data}/{@code .length}. {@link RioBridgeCan}'s session is the only code
+ * path here that has ever read those two fields from a real session, and it has never once
+ * succeeded. That's consistent with this WPILib build's {@code readCANStreamSession} populating
+ * timestamp/messageId correctly but not marshaling the payload bytes back to Java at all -- which
+ * would make this a structural blocker for the whole design (which depends on reading an 8-byte
+ * payload per frame), not a per-frame nuisance. {@link #lastMalformedFrameDescription()} exists
+ * to confirm or rule this out on the next run: if {@code dataLength} is consistently 0 across
+ * different arbitration IDs and timestamps look sane and increasing, that's the marshaling gap;
+ * if lengths vary or timestamps look wrong too, something else is going on. This is the third
+ * real, hardware-found rough edge in this exact {@code readCANStreamSession} code path, after the
+ * timestamp-unit ambiguity above and {@link RioBridgeCan}'s overflow-segfault.
  */
 final class RioBridgeCanDemux {
   private static final double TIMESTAMP_TO_SECONDS = 1.0 / 1_000_000.0;
@@ -50,6 +62,7 @@ final class RioBridgeCanDemux {
   private AttitudeSample latestAttitude;
   private final List<AttitudeSample> pendingAttitudeSamples = new ArrayList<>();
   private int malformedFrameCount = 0;
+  private String lastMalformedFrameDescription;
 
   void accept(CANStreamMessage message) {
     byte[] data = Arrays.copyOf(message.data, message.length);
@@ -74,22 +87,39 @@ final class RioBridgeCanDemux {
       // failure mode on an offseason bridge, not throwing out of a periodic loop.
     } catch (IllegalArgumentException malformed) {
       // Matched one of our three arbitration IDs but wasn't actually shaped like that frame (see
-      // class javadoc -- confirmed on real hardware, a 0-byte message on the Encoders ID). Drop
-      // this one frame and keep the previous latest* value rather than crash the whole loop over
-      // one bad frame; malformedFrameCount is the visibility into how often this happens.
+      // class javadoc). Drop this one frame and keep the previous latest* value rather than
+      // crash the whole loop over one bad frame; malformedFrameCount/lastMalformedFrameDescription
+      // are the visibility into how often this happens and what the raw message actually looked
+      // like when it did.
       malformedFrameCount++;
+      lastMalformedFrameDescription =
+          String.format(
+              "arbitrationId=0x%X rawMessageId=0x%X dataLength=%d rawTimestamp=%d: %s",
+              id, message.messageId, message.length, message.timestamp, malformed.getMessage());
     }
   }
 
   /**
    * How many times {@link #accept} has received a message that matched one of the RioBridge
    * protocol's three arbitration IDs but failed to unpack as that frame's expected byte length.
-   * Should stay at 0; confirmed nonzero at least once on real hardware, cause not fully
-   * understood (see class javadoc) but not a RioBridge sender-side bug -- {@code CanFrames}'
-   * packing methods always emit exactly 8 bytes.
+   * Should stay at 0 -- confirmed on real hardware to instead climb at essentially the protocol's
+   * full frame rate (see class javadoc), not the rare one-off this originally looked like. Not a
+   * RioBridge sender-side bug -- {@code CanFrames}' packing methods always emit exactly 8 bytes.
    */
   int malformedFrameCount() {
     return malformedFrameCount;
+  }
+
+  /**
+   * Details of the most recent frame {@link #accept} couldn't unpack, or {@code null} if none
+   * has happened yet. Print this (throttled -- it changes on every malformed frame when they're
+   * frequent) to test the class javadoc's marshaling-gap hypothesis: consistently
+   * {@code dataLength=0} with sane, increasing {@code rawTimestamp} values across different
+   * {@code arbitrationId}s would confirm it; varying lengths or nonsensical timestamps would
+   * point elsewhere instead.
+   */
+  String lastMalformedFrameDescription() {
+    return lastMalformedFrameDescription;
   }
 
   StatusFrame latestStatus() {
