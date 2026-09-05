@@ -16,6 +16,14 @@ import org.wpilib.system.Timer;
  * RioBridgeCan} and both buses' {@link BusHealthMonitor} counters, printing a line per bus per
  * second and flagging any regression.
  *
+ * <p><b>{@code attitudeFramesLastSecond} caps at ~50, not ~100, and that's correct.</b> This
+ * class runs at {@code TimedRobot}'s 50 Hz default period, and {@link RioBridgeCan} has no
+ * per-sample buffering (see its class javadoc) -- {@code readPacketLatest} only ever returns
+ * whichever single packet is most recent at the moment of the call. Polling a 100 Hz source at
+ * 50 Hz structurally cannot observe more than 50 distinct samples/sec no matter how well
+ * everything else is working; confirmed on real hardware landing right at that ceiling
+ * (consistently ~50-51/sec) once the payload-marshaling fix below actually worked.
+ *
  * <p>{@link #rioBridgeCan} is still constructed after the steps above run, not as a field
  * initializer, matching the previous (stream-session-based) version of this class -- that
  * ordering was originally needed to avoid a real buffer-overflow crash, which doesn't apply to
@@ -83,10 +91,13 @@ public class DiagnosticsRobot extends TimedRobot {
     printReading(drivetrain, previousDrivetrainReading);
     printReading(rioBridge, previousRioBridgeReading);
     System.out.printf(
-        "  RioBridgeCan: attitudeFramesLastSecond=%d (expect ~%d at 100 Hz) overflowCount=%d"
+        "  RioBridgeCan: attitudeFramesLastSecond=%d (expect ~%d -- this loop's 50 Hz default"
+            + " period, not the Attitude frame's 100 Hz send rate: readPacketLatest has no"
+            + " buffering, so a 50 Hz poll of a 100 Hz source structurally can't observe more"
+            + " than 50 distinct samples/sec) overflowCount=%d"
             + " malformedFrameCount=%d%s%n",
         attitudeFramesSinceLastPrint,
-        100,
+        50,
         rioBridgeCan.overflowCount(),
         rioBridgeCan.malformedFrameCount(),
         rioBridgeCan.overflowCount() > 0 || rioBridgeCan.malformedFrameCount() > 0

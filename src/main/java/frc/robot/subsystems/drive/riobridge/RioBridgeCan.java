@@ -26,11 +26,13 @@ import org.wpilib.hardware.hal.can.CANReceiveMessage;
  * <p>This class is the fallback: the older, non-streaming, per-device {@code CAN}/{@code
  * CANAPIJNI} API instead of the buffered stream session -- a structurally different native code
  * path (device-scoped {@code readCANPacketLatest} rather than a shared, mask-filtered stream
- * buffer). <b>Whether it actually marshals payload bytes correctly is exactly what deploying this
- * branch tests -- this is not yet confirmed to work, only more likely to.</b> If {@code
- * malformedFrameCount} still climbs here, the payload-marshaling gap isn't specific to the stream
- * session API, and the next step is a different WPILib version or an upstream fix, not more
- * workarounds in this class.
+ * buffer). <b>Confirmed working on real hardware:</b> deployed on real SystemCore, {@code
+ * malformedFrameCount} stayed at 0 and {@code attitudeFramesLastSecond} came back nonzero (~50,
+ * not ~100 -- expected, not a regression, since {@code DiagnosticsRobot}'s 50 Hz default loop
+ * polling a 100 Hz, non-buffered source structurally can't observe more than 50 distinct
+ * samples/sec; see its class javadoc). So the payload-marshaling gap really was specific to the
+ * stream session API -- this per-device API marshals payload bytes correctly on the same
+ * platform, same WPILib version, same hardware.
  *
  * <p><b>What this loses versus the stream session design:</b> per-sample buffering. {@code
  * readPacketLatest} only ever returns the single most recent packet for a given API ID -- there's
