@@ -42,6 +42,22 @@ public class Robot extends LoggedRobot {
   /** Set true to write a log during ordinary simulation, so a sim run can itself be replayed. */
   private static final boolean LOG_IN_SIM = false;
 
+  /**
+   * Where {@link WPILOGWriter} writes persistent {@code .wpilog} files on real hardware.
+   *
+   * <p>{@code new WPILOGWriter()} with no argument defaults to {@code "/U/logs"} unconditionally
+   * on real hardware -- confirmed from AdvantageKit's real source (decompiled {@code
+   * akit-java:27.0.0-alpha-4}), not the roboRIO-specific "if a USB stick is mounted" behavior the
+   * comment below used to (incorrectly) claim. {@code /U} is a roboRIO USB-automount convention;
+   * SystemCore is a Raspberry Pi running Limelight's own OS, where that path is either meaningless
+   * or lands somewhere obscure on the root filesystem -- the leading explanation for logs that
+   * can't be found or downloaded even though live NetworkTables values (published separately, via
+   * {@link NT4Publisher}) work fine. {@code /home/systemcore/} is confirmed writable and is
+   * SystemCore's real home directory (seen directly in deploy and crash-log paths on real
+   * hardware), so logs land somewhere the user can actually find and pull off over SSH/SCP.
+   */
+  private static final String REAL_LOG_FOLDER = "/home/systemcore/logs";
+
   private final RobotContainer robotContainer;
   private final Timer disabledTimer = new Timer();
 
@@ -86,8 +102,10 @@ public class Robot extends LoggedRobot {
 
     if (REPLAY_LOG == null) {
       if (RobotBase.isReal()) {
-        // Log to the USB stick if one is mounted, and publish live to NetworkTables.
-        Logger.addDataReceiver(new WPILOGWriter());
+        // Write persistent logs under SystemCore's real home directory (see REAL_LOG_FOLDER's
+        // javadoc for why the no-arg constructor's default doesn't work here), and publish live
+        // to NetworkTables.
+        Logger.addDataReceiver(new WPILOGWriter(REAL_LOG_FOLDER));
         Logger.addDataReceiver(new NT4Publisher());
       } else {
         // Sim normally just publishes live for AdvantageScope. Flip LOG_IN_SIM to capture a
