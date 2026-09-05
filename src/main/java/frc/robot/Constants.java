@@ -4,6 +4,7 @@
 
 package frc.robot;
 
+import org.wpilib.hardware.hal.CANBusMap;
 import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.math.util.Units;
 
@@ -140,21 +141,23 @@ public final class Constants {
     public static final double NOMINAL_VOLTAGE = 12.0;
 
     /**
-     * Whether the Thrifty absolute encoders are actually wired up.
+     * Whether the absolute encoders are actually readable this loop.
      *
-     * <p>Currently false: they cannot be connected to this SystemCore. Without them a module has no
-     * idea which way it is pointing at power-on, so instead the wheels are aligned by hand and the
-     * turn encoders zeroed there — either at boot or on demand with the "Zero Modules" routine.
+     * <p>They still can't be wired to this SystemCore directly -- that hasn't changed. What
+     * changed is that they no longer have to be: RioBridge (see {@link RioBridge}, below) runs
+     * them on a roboRIO under their unmodified 2026 Thrifty vendor library and republishes the
+     * readings over CAN, so {@code ModuleIOSpark} now reads its absolute position from {@code
+     * RioBridgeCan} instead of a local {@code AnalogEncoder}. Set true here, matching that -- the
+     * actual per-loop connected state {@code ModuleIOInputs.turnEncoderConnected} reports comes
+     * from Encoders-frame staleness, not this constant, so a RioBridge power-cycle still shows up
+     * as disconnected even with this true.
      *
-     * <p>What that costs: module heading is only correct as long as nothing moves the wheels between
-     * zeroing and driving. Bump a module, or let the steering coast while pushing the robot around,
-     * and it is wrong until you re-zero. Re-zero whenever the robot has been handled, and expect to
-     * do it more often than feels reasonable.
-     *
-     * <p>Set true once the encoders are connected, and the modules will seed themselves from the
-     * absolute reading at boot instead.
+     * <p>Set back to false (and revert {@code ModuleIOSpark} to a local {@code AnalogEncoder}) if
+     * the RioBridge is ever removed from this robot -- without either one, a module has no idea
+     * which way it is pointing at power-on, and needs the wheels aligned by hand and the turn
+     * encoders zeroed via the "Zero Modules" routine instead.
      */
-    public static final boolean HAS_ABSOLUTE_ENCODERS = false;
+    public static final boolean HAS_ABSOLUTE_ENCODERS = true;
 
     /**
      * CAN bus the modules live on. SystemCore supports several, so REVLib 2027 requires a bus id
@@ -294,5 +297,30 @@ public final class Constants {
 
     /** Joystick deadband, from the previous OperatorConstants. */
     public static final double DEADBAND = 0.1;
+  }
+
+  /**
+   * Wiring for the <a href="https://github.com/clrozeboom/RioBridge">RioBridge</a> -- a roboRIO
+   * that republishes the four Thrifty absolute encoders and a navX2 over CAN, since neither can
+   * be wired to this SystemCore directly. See that repo's README for the protocol and its
+   * hardware-verification guide for how to check this bench setup before trusting it.
+   */
+  public static final class RioBridge {
+    private RioBridge() {}
+
+    /**
+     * The RioBridge's dedicated CAN bus, isolated from {@link Module#CAN_BUS_ID} so its frames
+     * never mix with the drivetrain's SPARK MAX / heartbeat traffic. A raw HAL bus id ({@code
+     * int}), not {@code CANPort} -- see {@code RioBridgeCan}'s javadoc for why, on this project's
+     * alpha-6 WPILib pin.
+     */
+    public static final int BUS_ID = CANBusMap.CAN_S1;
+
+    /**
+     * Stream session buffer size, in messages. The protocol sends at most 220 frames/second
+     * (20 Hz Status + 100 Hz Encoders + 100 Hz Attitude) across a single session, so this is
+     * generous headroom against a missed poll, not a tight budget.
+     */
+    public static final int MAX_MESSAGES_PER_POLL = 32;
   }
 }

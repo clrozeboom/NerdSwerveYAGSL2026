@@ -5,14 +5,15 @@
 package frc.robot.subsystems.drive;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import frc.robot.Constants;
 import org.junit.jupiter.api.Test;
 
 /**
- * Covers the no-absolute-encoder path: the modules on this robot are aligned by hand and zeroed
- * there, so the zeroing has to actually reach the IO layer.
+ * Covers the hand-zeroing path -- still exercised even with a RioBridge supplying absolute
+ * positions, since {@code TuningCommands.zeroModules} is still bound (for the "handled the robot,
+ * need to re-align" case) regardless of {@link Constants.Module#HAS_ABSOLUTE_ENCODERS}.
  */
 class ZeroModulesTest {
 
@@ -37,12 +38,16 @@ class ZeroModulesTest {
   }
 
   @Test
-  void absoluteEncodersAreOffSoTheHandZeroingPathIsTheLiveOne() {
-    // This robot cannot connect the Thrifty encoders to its SystemCore. If someone flips this back
-    // on without wiring them, ModuleIOSpark will read an unconnected analog channel and every module
-    // will believe a constant heading, so the flag is worth asserting rather than assuming.
-    assertFalse(
+  void absoluteEncodersComeFromTheRioBridgeNotADirectAnalogChannel() {
+    // This robot still cannot connect the Thrifty encoders to its SystemCore directly -- the
+    // RioBridge is what makes this true rather than false. If someone flips this back on without
+    // also passing a real RioBridgeCan into ModuleIOSpark, readAbsolutePosition() falls back to
+    // the hand-zeroed relative encoder instead of silently reading garbage (see its javadoc), but
+    // that fallback defeats the point of turning this on, so the flag is still worth asserting
+    // rather than assuming.
+    assertTrue(
         Constants.Module.HAS_ABSOLUTE_ENCODERS,
-        "absolute encoders are not wired on this robot; modules are zeroed by hand");
+        "absolute encoders are sourced from the RioBridge now -- see its javadoc before flipping"
+            + " this back to false");
   }
 }

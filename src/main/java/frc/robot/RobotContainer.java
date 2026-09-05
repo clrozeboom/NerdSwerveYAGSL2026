@@ -11,6 +11,8 @@ import frc.robot.subsystems.drive.Drive;
 import frc.robot.subsystems.drive.GyroIONone;
 import frc.robot.subsystems.drive.ModuleIOSim;
 import frc.robot.subsystems.drive.ModuleIOSpark;
+import frc.robot.subsystems.drive.riobridge.GyroIORioBridge;
+import frc.robot.subsystems.drive.riobridge.RioBridgeCan;
 import org.wpilib.command2.Command;
 import org.wpilib.command2.Commands;
 import org.wpilib.command2.button.CommandGamepad;
@@ -32,17 +34,25 @@ public class RobotContainer {
 
   public RobotContainer() {
     if (RobotBase.isReal()) {
+      // The NavX the YAGSL config used has no 2027 release, and SystemCore dropped SPI
+      // regardless -- same story for the four Thrifty absolute encoders, which never had
+      // anywhere on this SystemCore to plug into. The RioBridge (see Constants.RioBridge) is a
+      // roboRIO that runs both under their unmodified 2026 vendor libraries and republishes the
+      // readings over CAN; one shared session feeds both the gyro and every module's absolute
+      // encoder below. If this robot ever drops the RioBridge, revert to GyroIONone/GyroIOOnboard
+      // and pass null here, and flip Constants.Module.HAS_ABSOLUTE_ENCODERS back to false.
+      RioBridgeCan rioBridgeCan =
+          new RioBridgeCan(Constants.RioBridge.BUS_ID, Constants.RioBridge.MAX_MESSAGES_PER_POLL);
       drive =
           new Drive(
-              // No gyro yet. The NavX the YAGSL config used has no 2027 release, and SystemCore
-              // dropped SPI regardless. Swap in GyroIOOnboard to use SystemCore's built-in IMU
-              // once its mount orientation is confirmed; Drive works either way.
-              new GyroIONone(),
-              new ModuleIOSpark(ModuleConfig.FRONT_LEFT),
-              new ModuleIOSpark(ModuleConfig.FRONT_RIGHT),
-              new ModuleIOSpark(ModuleConfig.BACK_LEFT),
-              new ModuleIOSpark(ModuleConfig.BACK_RIGHT));
+              new GyroIORioBridge(rioBridgeCan),
+              new ModuleIOSpark(ModuleConfig.FRONT_LEFT, rioBridgeCan),
+              new ModuleIOSpark(ModuleConfig.FRONT_RIGHT, rioBridgeCan),
+              new ModuleIOSpark(ModuleConfig.BACK_LEFT, rioBridgeCan),
+              new ModuleIOSpark(ModuleConfig.BACK_RIGHT, rioBridgeCan));
     } else {
+      // The RioBridge is real hardware this project has no simulation model for, so simulation
+      // keeps the wheel-integrated fallback (GyroIONone) rather than pretending to have a gyro.
       drive =
           new Drive(
               new GyroIONone(),
@@ -60,10 +70,11 @@ public class RobotContainer {
     // Robot-relative driving on the sticks. Left stick translates, right stick turns. Joystick axes
     // are negated because pushing a stick forward or left reads negative.
     //
-    // This is the default rather than field-relative because there is no gyro on this robot. With
-    // heading coming only from integrated module positions it drifts, and a drifting heading makes
-    // field-relative driving progressively wrong in a way that is confusing to drive. Robot-relative
-    // ignores heading entirely, so it stays correct indefinitely.
+    // Still the default even with the RioBridge gyro wired up above: this binding predates it and
+    // switching the default drive scheme is a real behavior change worth deciding on its own,
+    // rather than as a side effect of adding gyro support. Left bumper below now gets a
+    // non-drifting heading either way -- consider promoting it to the default once that's been
+    // driven and confirmed to feel right.
     drive.setDefaultCommand(
         DriveCommands.robotRelativeDrive(
             drive,
@@ -71,8 +82,7 @@ public class RobotContainer {
             () -> -driver.getLeftX(),
             () -> -driver.getRightX()));
 
-    // Hold the left bumper for field-relative. Only useful once a gyro is fitted; until then the
-    // heading it works from is the drifting wheel-derived estimate.
+    // Hold the left bumper for field-relative.
     driver
         .leftBumper()
         .whileTrue(
