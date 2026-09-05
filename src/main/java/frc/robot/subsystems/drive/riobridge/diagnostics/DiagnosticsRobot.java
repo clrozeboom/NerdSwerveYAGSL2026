@@ -47,8 +47,8 @@ public class DiagnosticsRobot extends TimedRobot {
         "Command the drivetrain (or otherwise load bus 0) during this run -- an idle bus 0"
             + " doesn't exercise the shared SPI master this is checking.");
 
-    previousDrivetrainReading = BusHealthMonitor.sample(DRIVETRAIN_BUS, "CAN_S0");
-    previousRioBridgeReading = BusHealthMonitor.sample(RIOBRIDGE_BUS, "CAN_S1");
+    previousDrivetrainReading = sampleSafely(DRIVETRAIN_BUS, "CAN_S0");
+    previousRioBridgeReading = sampleSafely(RIOBRIDGE_BUS, "CAN_S1");
   }
 
   @Override
@@ -68,15 +68,11 @@ public class DiagnosticsRobot extends TimedRobot {
     }
     nextPrintAt = now + PRINT_INTERVAL_SECONDS;
 
-    BusHealthMonitor.BusReading drivetrain = BusHealthMonitor.sample(DRIVETRAIN_BUS, "CAN_S0");
-    BusHealthMonitor.BusReading rioBridge = BusHealthMonitor.sample(RIOBRIDGE_BUS, "CAN_S1");
+    BusHealthMonitor.BusReading drivetrain = sampleSafely(DRIVETRAIN_BUS, "CAN_S0");
+    BusHealthMonitor.BusReading rioBridge = sampleSafely(RIOBRIDGE_BUS, "CAN_S1");
 
-    System.out.println(
-        BusHealthMonitor.describe(drivetrain)
-            + flag(BusHealthMonitor.regressed(previousDrivetrainReading, drivetrain)));
-    System.out.println(
-        BusHealthMonitor.describe(rioBridge)
-            + flag(BusHealthMonitor.regressed(previousRioBridgeReading, rioBridge)));
+    printReading(drivetrain, previousDrivetrainReading);
+    printReading(rioBridge, previousRioBridgeReading);
     System.out.printf(
         "  RioBridgeCan: attitudeFramesLastSecond=%d (expect ~%d at 100 Hz) overflowCount=%d%s%n",
         attitudeFramesSinceLastPrint,
@@ -87,6 +83,40 @@ public class DiagnosticsRobot extends TimedRobot {
     attitudeFramesSinceLastPrint = 0;
     previousDrivetrainReading = drivetrain;
     previousRioBridgeReading = rioBridge;
+  }
+
+  private static void printReading(
+      BusHealthMonitor.BusReading current, BusHealthMonitor.BusReading previous) {
+    if (current == null) {
+      return; // sampleSafely already explained why.
+    }
+    boolean regressed = previous != null && BusHealthMonitor.regressed(previous, current);
+    System.out.println(BusHealthMonitor.describe(current) + flag(regressed));
+  }
+
+  /**
+   * {@code CANJNI.getCANStatus} can throw at the HAL layer for a bus this process has never
+   * otherwise touched -- confirmed on real hardware for the drivetrain bus in a run of exactly
+   * this class, where nothing here ever constructs a device or opens a session on it (that
+   * happens in the real robot code this class temporarily replaces, not here). Its SocketCAN
+   * interface simply not being up yet on the Core is the other plausible cause. Reported instead
+   * of crashing the whole diagnostic and losing visibility into the other bus -- which matters
+   * most exactly when it's the drivetrain bus that's failing, since the RioBridge bus is the one
+   * this class's own {@link RioBridgeCan} session already guarantees is touched.
+   */
+  private static BusHealthMonitor.BusReading sampleSafely(int bus, String busName) {
+    try {
+      return BusHealthMonitor.sample(bus, busName);
+    } catch (RuntimeException e) {
+      System.out.println(
+          busName
+              + ": status unavailable ("
+              + e.getMessage()
+              + "). Likely means this bus isn't brought up on the Core yet, or nothing in this"
+              + " process has used it -- doesn't necessarily mean anything is wrong with the bus"
+              + " itself.");
+      return null;
+    }
   }
 
   private static String flag(boolean regressed) {

@@ -17,16 +17,16 @@ import org.wpilib.hardware.hal.can.CANStreamMessage;
  * exercised directly in {@code RioBridgeCanDemuxTest} without a CAN session or the desktop HAL
  * sim.
  *
- * <p>Two things to confirm against the installed 2027 alpha javadoc before trusting this on
- * hardware (README's own "To verify" list has the same two gaps for the same reason -- this is
- * genuinely unresolved upstream, not a corner cut here): {@link CANStreamMessage#timestamp}'s
- * field comment says milliseconds since {@code CLOCK_MONOTONIC}, but {@code setStreamData}'s
- * parameter javadoc on the same class says nanoseconds. This code follows the field comment
- * ({@link #TIMESTAMP_TO_SECONDS}); print a raw value against a known interval and confirm before
- * trusting the 100 ms staleness threshold in {@link GyroIORioBridge}.
+ * <p>{@link CANStreamMessage#timestamp}'s unit was genuinely ambiguous from the javadoc alone --
+ * the field comment says milliseconds since {@code CLOCK_MONOTONIC}, {@code setStreamData}'s
+ * parameter javadoc on the same class says nanoseconds -- and confirmed neither: a real
+ * {@code TimestampUnitsCheck} run against this exact bus measured {@code secondsPerUnit ~= 1e-6}
+ * (wall-clock elapsed=1.946s against a raw timestamp delta of 1,950,175 over 40 Status frames at
+ * 20 Hz), which is microseconds. {@link #TIMESTAMP_TO_SECONDS} follows that measurement, not
+ * either javadoc.
  */
 final class RioBridgeCanDemux {
-  private static final double TIMESTAMP_TO_SECONDS = 1.0 / 1000.0;
+  private static final double TIMESTAMP_TO_SECONDS = 1.0 / 1_000_000.0;
 
   /** Strips the CAN JNI's frame-type flag bits (see {@code CANJNI.CAN_IS_FRAME_*}) before
    *  comparing a received message ID against the 29-bit arbitration IDs in {@link CanIds}. */
