@@ -15,6 +15,16 @@ import org.wpilib.system.Timer;
  * <p>Runs {@link TimestampUnitsCheck} once at startup, then continuously polls a {@link
  * RioBridgeCan} and both buses' {@link BusHealthMonitor} counters, printing a line per bus per
  * second and flagging any regression.
+ *
+ * <p><b>{@link #rioBridgeCan} is constructed after the steps above run, not before -- this
+ * crashed the JVM on real hardware when it wasn't.</b> {@code RioBridgeCan}'s session used to be
+ * a field initializer, meaning it opened (and started buffering real traffic) before
+ * {@link TimestampUnitsCheck#run} even started, and that check alone took ~2.8s wall-clock on
+ * real hardware while transmitting at ~220 frames/sec -- nobody was polling the session that
+ * whole time, so its old 32-message buffer overflowed by roughly 20x before the first
+ * {@link #robotPeriodic} call ever happened. See {@link RioBridgeCan}'s class javadoc for why
+ * that overflow crashed the whole program instead of being caught. Constructing it here instead
+ * means there's no gap between "session exists" and "something is polling it."
  */
 public class DiagnosticsRobot extends TimedRobot {
   private static final int RIOBRIDGE_BUS = CANBusMap.CAN_S1;
@@ -22,7 +32,14 @@ public class DiagnosticsRobot extends TimedRobot {
   private static final double PRINT_INTERVAL_SECONDS = 1.0;
   private static final double TIMESTAMP_CHECK_TIMEOUT_SECONDS = 10.0;
 
-  private final RioBridgeCan rioBridgeCan = new RioBridgeCan(RIOBRIDGE_BUS, 32);
+  /**
+   * Generous, not tuned: ~220 frames/sec (20 Hz Status + 100 Hz Encoders + 100 Hz Attitude) times
+   * several seconds of tolerated polling delay, comfortably rounded up. See {@link RioBridgeCan}'s
+   * class javadoc for why headroom here is a hard requirement now, not just nice-to-have.
+   */
+  private static final int MAX_MESSAGES_PER_POLL = 1024;
+
+  private final RioBridgeCan rioBridgeCan;
 
   private BusHealthMonitor.BusReading previousDrivetrainReading;
   private BusHealthMonitor.BusReading previousRioBridgeReading;
@@ -46,6 +63,11 @@ public class DiagnosticsRobot extends TimedRobot {
     System.out.println(
         "Command the drivetrain (or otherwise load bus 0) during this run -- an idle bus 0"
             + " doesn't exercise the shared SPI master this is checking.");
+
+    // Opened here, not as a field initializer -- see class javadoc. TimestampUnitsCheck above
+    // uses its own separate, short-lived session; rioBridgeCan itself doesn't exist yet, so
+    // there's nothing of its own accumulating traffic unpolled during that ~2s run.
+    rioBridgeCan = new RioBridgeCan(RIOBRIDGE_BUS, MAX_MESSAGES_PER_POLL);
 
     previousDrivetrainReading = sampleSafely(DRIVETRAIN_BUS, "CAN_S0");
     previousRioBridgeReading = sampleSafely(RIOBRIDGE_BUS, "CAN_S1");

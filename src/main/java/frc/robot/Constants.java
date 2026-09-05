@@ -317,10 +317,15 @@ public final class Constants {
     public static final int BUS_ID = CANBusMap.CAN_S1;
 
     /**
-     * Stream session buffer size, in messages. The protocol sends at most 220 frames/second
-     * (20 Hz Status + 100 Hz Encoders + 100 Hz Attitude) across a single session, so this is
-     * generous headroom against a missed poll, not a tight budget.
+     * Stream session buffer size, in messages. Sizing this generously is a hard requirement, not
+     * just headroom: a real overflow (the session's buffer filling between polls) crashes the
+     * JVM outright on real hardware -- a confirmed native bug in this WPILib build's HAL JNI
+     * layer that segfaults trying to construct the exception it's supposed to throw, before any
+     * Java {@code catch} block runs. See {@code RioBridgeCan}'s class javadoc for the full
+     * writeup. The protocol sends at most 220 frames/second (20 Hz Status + 100 Hz Encoders +
+     * 100 Hz Attitude) across a single session; 1024 is ~4.6 seconds of headroom at that rate,
+     * comfortably above the worst case rather than the steady-state one.
      */
-    public static final int MAX_MESSAGES_PER_POLL = 32;
+    public static final int MAX_MESSAGES_PER_POLL = 1024;
   }
 }
