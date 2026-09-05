@@ -38,11 +38,10 @@ public class RobotContainer {
       // regardless -- same story for the four Thrifty absolute encoders, which never had
       // anywhere on this SystemCore to plug into. The RioBridge (see Constants.RioBridge) is a
       // roboRIO that runs both under their unmodified 2026 vendor libraries and republishes the
-      // readings over CAN; one shared session feeds both the gyro and every module's absolute
+      // readings over CAN; one shared instance feeds both the gyro and every module's absolute
       // encoder below. If this robot ever drops the RioBridge, revert to GyroIONone/GyroIOOnboard
       // and pass null here, and flip Constants.Module.HAS_ABSOLUTE_ENCODERS back to false.
-      RioBridgeCan rioBridgeCan =
-          new RioBridgeCan(Constants.RioBridge.BUS_ID, Constants.RioBridge.MAX_MESSAGES_PER_POLL);
+      RioBridgeCan rioBridgeCan = new RioBridgeCan(Constants.RioBridge.BUS_ID);
       drive =
           new Drive(
               new GyroIORioBridge(rioBridgeCan),

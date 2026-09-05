@@ -1,154 +1,197 @@
 package frc.robot.subsystems.drive.riobridge;
 
+import frc.robot.protocol.CanFrames;
 import frc.robot.protocol.CanFrames.EncodersFrame;
 import frc.robot.protocol.CanFrames.StatusFrame;
 import frc.robot.protocol.CanIds;
-import java.util.List;
-import org.wpilib.hardware.hal.can.CANJNI;
-import org.wpilib.hardware.hal.can.CANStreamMessage;
-import org.wpilib.hardware.hal.can.CANStreamOverflowException;
+import java.util.Arrays;
+import org.wpilib.hardware.bus.CAN;
+import org.wpilib.hardware.hal.can.CANReceiveMessage;
 
 /**
- * Owns the RioBridge's single CAN stream session (root README: "The Core reads every frame with
- * a single buffered, timestamped stream session"). Construct one per robot and share it with
- * whatever reads the encoders (see {@link #latestEncoders()}) as well as {@link
- * GyroIORioBridge} -- don't open a second session.
+ * Owns the RioBridge's CAN reads: one {@link CAN} device handle for the RioBridge's own device
+ * identity (bus + device ID + manufacturer + device type), read per frame type via {@code
+ * readPacketLatest} -- not the buffered stream session the original design used.
  *
- * <p>Takes a raw HAL bus id ({@code int}) rather than {@code org.wpilib.hardware.bus.CANPort}:
- * this project is pinned to WPILib {@code 2027.0.0-alpha-6}, and that friendly enum wrapper
- * doesn't exist yet at alpha-6 -- only added to {@code wpilibj-java} between alpha-6 and alpha-7
- * (confirmed by decompiling both jars' {@code org.wpilib.hardware.bus} packages). The underlying
- * capability this class actually needs is present at alpha-6, though: {@code CANJNI}'s native
- * methods (`openCANStreamSession` included) already take a raw bus id `int` as their first
- * argument at alpha-6, and {@code org.wpilib.hardware.hal.CANBusMap} (bundled in {@code hal-java},
- * already on this project's classpath) exposes the same {@code CAN_S0}/{@code CAN_S1}/... values
- * {@code CANPort} would, just as plain {@code int} constants instead of enum entries. Pass one of
- * those (e.g. {@code CANBusMap.CAN_S1}) as {@code bus} below. If this project bumps to alpha-7 or
- * later, this constructor can switch to taking {@code CANPort} directly and drop this note.
+ * <p><b>Why this exists: the stream session API never delivered payload data on this WPILib
+ * build.</b> The previous version of this class used {@code CANJNI.openCANStreamSession}/{@code
+ * readCANStreamSession} with {@code CANStreamMessage} (see git history, and {@code
+ * RioBridgeCanDemux} before it was deleted here). That populated {@code
+ * CANStreamMessage.timestamp}/{@code .messageId} correctly but {@code .length} was 0 on
+ * essentially every real frame -- confirmed on real hardware at a rate matching the protocol's
+ * entire combined frame rate (~220/sec), not an occasional glitch:
+ * {@code malformedFrameCount} climbed in lockstep with the expected frame rate while {@code
+ * attitudeFramesLastSecond} stayed at 0.
  *
- * <p><b>An actual buffer overflow crashes the JVM on real hardware -- confirmed, not
- * theoretical.</b> {@link #poll}'s {@code catch (CANStreamOverflowException)} below was written
- * assuming a dropped frame is a survivable, tolerated case, the same way a missed UDP packet
- * would be. That's wrong for this specific exception on this WPILib build: a real overflow (an
- * earlier version of {@code DiagnosticsRobot} left its own session unpolled for ~2.8s while
- * transmitting at ~220 frames/sec, far past its old 32-message buffer) segfaulted before the
- * catch block ever ran -- {@code SIGSEGV}, {@code SEGV_MAPERR}, address {@code 0x0}, inside
- * {@code wpi::hal::ThrowCANStreamOverflowException}'s call to {@code JNIEnv_::NewObject} in
- * {@code libwpiHaljni.so}, called from {@code CANJNI.readCANStreamSession}. The native code
- * that's supposed to construct and throw this exception null-derefs instead, so nothing in Java
- * -- no try/catch here or anywhere else -- ever gets a chance to run. That makes avoiding a real
- * overflow a hard requirement, not a nice-to-have: size {@code maxMessagesPerPoll} generously
- * (comfortably above frames-per-second times the longest realistic gap between polls, not just
- * the steady-state case) and never construct a session long before you start polling it, the way
- * {@code DiagnosticsRobot} used to. {@link #overflowCount()} should read as "this never actually
- * happened," not "this happened and got handled."
+ * <p>This class is the fallback: the older, non-streaming, per-device {@code CAN}/{@code
+ * CANAPIJNI} API instead of the buffered stream session -- a structurally different native code
+ * path (device-scoped {@code readCANPacketLatest} rather than a shared, mask-filtered stream
+ * buffer). <b>Whether it actually marshals payload bytes correctly is exactly what deploying this
+ * branch tests -- this is not yet confirmed to work, only more likely to.</b> If {@code
+ * malformedFrameCount} still climbs here, the payload-marshaling gap isn't specific to the stream
+ * session API, and the next step is a different WPILib version or an upstream fix, not more
+ * workarounds in this class.
  *
- * <p>The actual demux/decode logic lives in {@link RioBridgeCanDemux}, which has no JNI in it and
- * is unit tested directly. This class is the thin part that couldn't be build-verified against a
- * real CAN bus in the RioBridge sandbox this was ported from -- see that repo's
- * core-integration/README.md, though the overflow crash above confirms it does run against a
- * real one now.
+ * <p><b>What this loses versus the stream session design:</b> per-sample buffering. {@code
+ * readPacketLatest} only ever returns the single most recent packet for a given API ID -- there's
+ * no history of every sample received between two polls, unlike a buffered stream session. That's
+ * a real regression against the root RioBridge README's "single buffered, timestamped stream
+ * session" design intent, and would matter for an AdvantageKit-style multi-sample odometry array
+ * -- but this project's {@link GyroIORioBridge} already only ever reads the single latest
+ * Attitude sample (see its class javadoc), so it costs nothing here specifically.
+ *
+ * <p>{@link CANReceiveMessage#timestamp}'s javadoc is unambiguous -- "Timestamp message was
+ * received, in microseconds (wpi time)" -- unlike {@code CANStreamMessage}'s self-contradicting
+ * one, and matches the microsecond measurement {@code TimestampUnitsCheck} already confirmed
+ * against the stream API, so {@link #TIMESTAMP_TO_SECONDS} carries over unchanged.
  */
 public class RioBridgeCan implements AutoCloseable {
-  private final int sessionHandle;
-  private final CANStreamMessage[] scratch;
-  private final RioBridgeCanDemux demux = new RioBridgeCanDemux();
-  private int overflowCount = 0;
+  private static final double TIMESTAMP_TO_SECONDS = 1.0 / 1_000_000.0;
+
+  private final CAN can;
+  private final CANReceiveMessage statusMessage = new CANReceiveMessage();
+  private final CANReceiveMessage encodersMessage = new CANReceiveMessage();
+  private final CANReceiveMessage attitudeMessage = new CANReceiveMessage();
+
+  private StatusFrame latestStatus;
+  private double latestStatusTimestampSeconds = Double.NEGATIVE_INFINITY;
+  private EncodersFrame latestEncoders;
+  private double latestEncodersTimestampSeconds = Double.NEGATIVE_INFINITY;
+  private AttitudeSample latestAttitude;
+  private double lastAttitudeTimestampSeenSeconds = Double.NEGATIVE_INFINITY;
+  private int newAttitudeSampleCount = 0;
+  private int malformedFrameCount = 0;
+  private String lastMalformedFrameDescription;
 
   /**
    * @param bus a raw HAL bus id, e.g. {@code org.wpilib.hardware.hal.CANBusMap.CAN_S1} -- not a
-   *     {@code CANPort}, which doesn't exist at this project's alpha-6 WPILib pin. See the class
-   *     javadoc.
+   *     {@code CANPort}, which doesn't exist at this project's alpha-6 WPILib pin (see the
+   *     previous version of this class's javadoc for why that's fine).
    */
-  public RioBridgeCan(int bus, int maxMessagesPerPoll) {
-    sessionHandle =
-        CANJNI.openCANStreamSession(
-            bus, CanIds.STATUS_ARBITRATION_ID, CanIds.STREAM_MASK, maxMessagesPerPoll);
-    scratch = new CANStreamMessage[maxMessagesPerPoll];
-    for (int i = 0; i < scratch.length; i++) {
-      scratch[i] = new CANStreamMessage();
-    }
+  public RioBridgeCan(int bus) {
+    can = new CAN(bus, CanIds.DEVICE_NUMBER, CAN.TEAM_MANUFACTURER, CAN.TEAM_DEVICE_TYPE);
   }
 
   @Override
   public void close() {
-    CANJNI.closeCANStreamSession(sessionHandle);
+    can.close();
   }
 
-  /** Reads and demultiplexes every frame the session has buffered since the last call. */
+  /** Reads the latest cached packet for each of the RioBridge protocol's three frames. */
   public void poll() {
-    CANStreamMessage[] received = scratch;
-    int messagesRead;
+    pollStatus();
+    pollEncoders();
+    pollAttitude();
+  }
+
+  private void pollStatus() {
+    if (!can.readPacketLatest(CanIds.STATUS_API_ID, statusMessage)) {
+      return; // Nothing received yet on this API ID -- keep whatever was cached before.
+    }
     try {
-      messagesRead = CANJNI.readCANStreamSession(sessionHandle, scratch, scratch.length);
-    } catch (CANStreamOverflowException overflow) {
-      // This catch block is a courtesy, not a safety net -- see the class javadoc. On real
-      // hardware, actually reaching this condition has crashed the whole JVM before this code
-      // ever ran, at the native layer that's supposed to construct the exception in the first
-      // place. If you're seeing this catch actually execute, either that native bug got fixed
-      // upstream, or you got lucky on timing -- don't take it as confirmation this is safe to
-      // rely on. Demux what we did get rather than discarding it.
-      received = overflow.getMessages();
-      messagesRead = overflow.getMessagesRead();
-      overflowCount++;
+      latestStatus = CanFrames.unpackStatus(trim(statusMessage));
+      latestStatusTimestampSeconds = statusMessage.timestamp * TIMESTAMP_TO_SECONDS;
+    } catch (IllegalArgumentException malformed) {
+      recordMalformed(CanIds.STATUS_API_ID, statusMessage, malformed);
     }
-    for (int i = 0; i < messagesRead; i++) {
-      demux.accept(received[i]);
+  }
+
+  private void pollEncoders() {
+    if (!can.readPacketLatest(CanIds.ENCODERS_API_ID, encodersMessage)) {
+      return;
     }
+    try {
+      latestEncoders = CanFrames.unpackEncoders(trim(encodersMessage));
+      latestEncodersTimestampSeconds = encodersMessage.timestamp * TIMESTAMP_TO_SECONDS;
+    } catch (IllegalArgumentException malformed) {
+      recordMalformed(CanIds.ENCODERS_API_ID, encodersMessage, malformed);
+    }
+  }
+
+  private void pollAttitude() {
+    if (!can.readPacketLatest(CanIds.ATTITUDE_API_ID, attitudeMessage)) {
+      return;
+    }
+    try {
+      double timestampSeconds = attitudeMessage.timestamp * TIMESTAMP_TO_SECONDS;
+      latestAttitude = new AttitudeSample(CanFrames.unpackAttitude(trim(attitudeMessage)), timestampSeconds);
+      // readPacketLatest returns the same cached packet on every call between real updates, so
+      // only count it as a "new" sample when its timestamp actually moved -- the closest
+      // equivalent to the old stream session's per-sample count without buffering every sample.
+      if (timestampSeconds != lastAttitudeTimestampSeenSeconds) {
+        lastAttitudeTimestampSeenSeconds = timestampSeconds;
+        newAttitudeSampleCount++;
+      }
+    } catch (IllegalArgumentException malformed) {
+      recordMalformed(CanIds.ATTITUDE_API_ID, attitudeMessage, malformed);
+    }
+  }
+
+  private static byte[] trim(CANReceiveMessage message) {
+    return Arrays.copyOf(message.data, message.length);
+  }
+
+  private void recordMalformed(int apiId, CANReceiveMessage message, IllegalArgumentException malformed) {
+    malformedFrameCount++;
+    lastMalformedFrameDescription =
+        String.format(
+            "apiId=0x%X dataLength=%d rawTimestamp=%d: %s",
+            apiId, message.length, message.timestamp, malformed.getMessage());
   }
 
   /**
-   * How many times {@link #poll()} has hit {@link CANStreamOverflowException} -- i.e. this
-   * session's buffer filled between two polls and at least one frame was dropped before being
-   * read. Must stay at 0: this isn't "a nonzero count means dropped data," it's "a nonzero count
-   * means you got lucky that this didn't crash the JVM instead" -- see the class javadoc. A
-   * nonzero, growing count is still the direct answer to whether the shared SPI master is
-   * keeping up, but the goal on real hardware is never seeing it move off 0 in the first place.
+   * Always 0. This implementation has no buffered session -- {@code readPacketLatest} just
+   * overwrites a single cached packet per API ID, so there's nothing to overflow. Kept so
+   * existing callers (e.g. diagnostics printing) built against the stream-session version of this
+   * class don't need an unrelated code path removed.
    */
   public int overflowCount() {
-    return overflowCount;
+    return 0;
   }
 
   /**
-   * How many messages {@link #poll()} has received that matched one of the RioBridge protocol's
-   * three arbitration IDs but weren't actually shaped like that frame -- see {@link
-   * RioBridgeCanDemux}'s class javadoc for the confirmed-on-real-hardware case this guards
-   * against. Should stay at 0.
+   * How many times {@link #poll()} has received a packet that failed to unpack as its expected
+   * frame -- see class javadoc for why this exists and what it would mean if it's still nonzero
+   * with this implementation.
    */
   public int malformedFrameCount() {
-    return demux.malformedFrameCount();
+    return malformedFrameCount;
   }
 
-  /** See {@link RioBridgeCanDemux#lastMalformedFrameDescription()}. */
+  /** Details of the most recent frame {@link #poll()} couldn't unpack, or {@code null} if none has happened yet. */
   public String lastMalformedFrameDescription() {
-    return demux.lastMalformedFrameDescription();
+    return lastMalformedFrameDescription;
   }
 
   public StatusFrame latestStatus() {
-    return demux.latestStatus();
+    return latestStatus;
   }
 
   public double latestStatusTimestampSeconds() {
-    return demux.latestStatusTimestampSeconds();
+    return latestStatusTimestampSeconds;
   }
 
   public EncodersFrame latestEncoders() {
-    return demux.latestEncoders();
+    return latestEncoders;
   }
 
   public double latestEncodersTimestampSeconds() {
-    return demux.latestEncodersTimestampSeconds();
+    return latestEncodersTimestampSeconds;
   }
 
   public AttitudeSample latestAttitude() {
-    return demux.latestAttitude();
+    return latestAttitude;
   }
 
   /**
-   * Every Attitude sample received since the last call, oldest first, for AdvantageKit's
-   * per-sample odometry arrays. Call once per {@code updateInputs} -- this drains the buffer.
+   * How many distinct (by timestamp) Attitude samples {@link #poll()} has seen since the last
+   * call to this method. Resets to 0 each call. The closest equivalent to the old stream
+   * session's {@code drainAttitudeSamples().size()} without actually buffering every sample --
+   * see class javadoc.
    */
-  public List<AttitudeSample> drainAttitudeSamples() {
-    return demux.drainAttitudeSamples();
+  public int drainNewAttitudeSampleCount() {
+    int count = newAttitudeSampleCount;
+    newAttitudeSampleCount = 0;
+    return count;
   }
 }

@@ -9,8 +9,14 @@ import org.wpilib.system.Timer;
 /**
  * Root RioBridge README "to verify" item 1: whether {@code CANStreamMessage.timestamp} is really
  * milliseconds (per the field's own javadoc) or nanoseconds (per {@code setStreamData}'s
- * parameter javadoc, on the same class) -- see {@code RioBridgeCanDemux}'s class javadoc for the
- * exact contradiction in the real source.
+ * parameter javadoc, on the same class) -- confirmed on real hardware to be neither: microseconds
+ * (see the pass criteria below). This class is the one thing in this package still using the
+ * buffered stream session API ({@code CANStreamMessage}/{@code readCANStreamSession}) -- {@link
+ * frc.robot.subsystems.drive.riobridge.RioBridgeCan} moved to the per-device {@code CAN}/{@code
+ * CANReceiveMessage} API instead, after the stream session was found to never deliver payload
+ * bytes on this WPILib build (see its class javadoc). That finding doesn't touch this class:
+ * this only ever reads {@code .timestamp}, never {@code .data}/{@code .length}, which is exactly
+ * why it kept working when {@code RioBridgeCan} didn't.
  *
  * <p>Opens its own short-lived stream session filtered to just the Status frame (20 Hz, so a
  * clean ~50 ms period) and compares elapsed raw timestamp against elapsed wall-clock time over
