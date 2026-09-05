@@ -96,11 +96,15 @@ public class DiagnosticsRobot extends TimedRobot {
     printReading(drivetrain, previousDrivetrainReading);
     printReading(rioBridge, previousRioBridgeReading);
     System.out.printf(
-        "  RioBridgeCan: attitudeFramesLastSecond=%d (expect ~%d at 100 Hz) overflowCount=%d%s%n",
+        "  RioBridgeCan: attitudeFramesLastSecond=%d (expect ~%d at 100 Hz) overflowCount=%d"
+            + " malformedFrameCount=%d%s%n",
         attitudeFramesSinceLastPrint,
         100,
         rioBridgeCan.overflowCount(),
-        rioBridgeCan.overflowCount() > 0 ? "  <-- frames have been DROPPED, not just delayed" : "");
+        rioBridgeCan.malformedFrameCount(),
+        rioBridgeCan.overflowCount() > 0 || rioBridgeCan.malformedFrameCount() > 0
+            ? "  <-- frames have been DROPPED or discarded, not just delayed"
+            : "");
 
     attitudeFramesSinceLastPrint = 0;
     previousDrivetrainReading = drivetrain;

@@ -109,6 +109,16 @@ public class RioBridgeCan implements AutoCloseable {
     return overflowCount;
   }
 
+  /**
+   * How many messages {@link #poll()} has received that matched one of the RioBridge protocol's
+   * three arbitration IDs but weren't actually shaped like that frame -- see {@link
+   * RioBridgeCanDemux}'s class javadoc for the confirmed-on-real-hardware case this guards
+   * against. Should stay at 0.
+   */
+  public int malformedFrameCount() {
+    return demux.malformedFrameCount();
+  }
+
   public StatusFrame latestStatus() {
     return demux.latestStatus();
   }

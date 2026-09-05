@@ -24,6 +24,17 @@ import org.wpilib.hardware.hal.can.CANStreamMessage;
  * (wall-clock elapsed=1.946s against a raw timestamp delta of 1,950,175 over 40 Status frames at
  * 20 Hz), which is microseconds. {@link #TIMESTAMP_TO_SECONDS} follows that measurement, not
  * either javadoc.
+ *
+ * <p><b>A message can match one of the three arbitration IDs and still not be shaped like that
+ * frame -- confirmed on real hardware, not theoretical.</b> A live run hit an Encoders-ID message
+ * with {@code message.length == 0} (an {@code IllegalArgumentException: expected 8 bytes, got 0}
+ * out of {@code CanFrames.unpackEncoders}, unhandled, which killed the whole robot program). This
+ * is the third real, hardware-found rough edge in this exact {@code readCANStreamSession} code
+ * path, after the timestamp-unit ambiguity above and {@link RioBridgeCan}'s overflow-segfault --
+ * treat the whole stream session API as one that can hand back malformed data on this WPILib
+ * build, not just correctly-shaped frames with the wrong content. {@link #accept} now drops a
+ * frame that fails to unpack instead of letting the exception escape, the same "don't throw out
+ * of a periodic loop" call already made below for an unrecognized arbitration ID entirely.
  */
 final class RioBridgeCanDemux {
   private static final double TIMESTAMP_TO_SECONDS = 1.0 / 1_000_000.0;
@@ -38,26 +49,47 @@ final class RioBridgeCanDemux {
   private double latestEncodersTimestampSeconds = Double.NEGATIVE_INFINITY;
   private AttitudeSample latestAttitude;
   private final List<AttitudeSample> pendingAttitudeSamples = new ArrayList<>();
+  private int malformedFrameCount = 0;
 
   void accept(CANStreamMessage message) {
     byte[] data = Arrays.copyOf(message.data, message.length);
     double timestampSeconds = message.timestamp * TIMESTAMP_TO_SECONDS;
     int id = message.messageId & ARBITRATION_ID_MASK;
 
-    if (id == CanIds.STATUS_ARBITRATION_ID) {
-      latestStatus = CanFrames.unpackStatus(data);
-      latestStatusTimestampSeconds = timestampSeconds;
-    } else if (id == CanIds.ENCODERS_ARBITRATION_ID) {
-      latestEncoders = CanFrames.unpackEncoders(data);
-      latestEncodersTimestampSeconds = timestampSeconds;
-    } else if (id == CanIds.ATTITUDE_ARBITRATION_ID) {
-      AttitudeSample sample = new AttitudeSample(CanFrames.unpackAttitude(data), timestampSeconds);
-      latestAttitude = sample;
-      pendingAttitudeSamples.add(sample);
+    try {
+      if (id == CanIds.STATUS_ARBITRATION_ID) {
+        latestStatus = CanFrames.unpackStatus(data);
+        latestStatusTimestampSeconds = timestampSeconds;
+      } else if (id == CanIds.ENCODERS_ARBITRATION_ID) {
+        latestEncoders = CanFrames.unpackEncoders(data);
+        latestEncodersTimestampSeconds = timestampSeconds;
+      } else if (id == CanIds.ATTITUDE_ARBITRATION_ID) {
+        AttitudeSample sample =
+            new AttitudeSample(CanFrames.unpackAttitude(data), timestampSeconds);
+        latestAttitude = sample;
+        pendingAttitudeSamples.add(sample);
+      }
+      // Anything else matched the session's coarse filter without being one of our three frames
+      // -- shouldn't happen given the mask in CanIds, but silently ignoring it is the right
+      // failure mode on an offseason bridge, not throwing out of a periodic loop.
+    } catch (IllegalArgumentException malformed) {
+      // Matched one of our three arbitration IDs but wasn't actually shaped like that frame (see
+      // class javadoc -- confirmed on real hardware, a 0-byte message on the Encoders ID). Drop
+      // this one frame and keep the previous latest* value rather than crash the whole loop over
+      // one bad frame; malformedFrameCount is the visibility into how often this happens.
+      malformedFrameCount++;
     }
-    // Anything else matched the session's coarse filter without being one of our three frames --
-    // shouldn't happen given the mask in CanIds, but silently ignoring it is the right failure
-    // mode on an offseason bridge (ADR-0005), not throwing out of a periodic loop.
+  }
+
+  /**
+   * How many times {@link #accept} has received a message that matched one of the RioBridge
+   * protocol's three arbitration IDs but failed to unpack as that frame's expected byte length.
+   * Should stay at 0; confirmed nonzero at least once on real hardware, cause not fully
+   * understood (see class javadoc) but not a RioBridge sender-side bug -- {@code CanFrames}'
+   * packing methods always emit exactly 8 bytes.
+   */
+  int malformedFrameCount() {
+    return malformedFrameCount;
   }
 
   StatusFrame latestStatus() {
