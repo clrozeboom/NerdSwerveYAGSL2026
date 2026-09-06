@@ -232,10 +232,10 @@ public final class Constants {
    * are exactly the values from the four YAGSL module JSONs.
    */
   public enum ModuleConfig {
-    FRONT_LEFT(1, 2, 0, 169.5, Module.DRIVE_KS, Module.DRIVE_KV),
-    FRONT_RIGHT(7, 8, 1, 342.5, Module.DRIVE_KS, Module.DRIVE_KV),
-    BACK_LEFT(3, 4, 2, 14.99, Module.DRIVE_KS, Module.DRIVE_KV),
-    BACK_RIGHT(5, 6, 3, 290.4, Module.DRIVE_KS, Module.DRIVE_KV);
+    FRONT_LEFT(1, 2, 0, 163.48, Module.DRIVE_KS, Module.DRIVE_KV),
+    FRONT_RIGHT(7, 8, 1, 338.55, Module.DRIVE_KS, Module.DRIVE_KV),
+    BACK_LEFT(3, 4, 2, 9.32, Module.DRIVE_KS, Module.DRIVE_KV),
+    BACK_RIGHT(5, 6, 3, 283.62, Module.DRIVE_KS, Module.DRIVE_KV);
 
     /** SPARK MAX CAN ID driving the wheel. */
     public final int driveCanId;
