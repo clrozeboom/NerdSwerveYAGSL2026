@@ -70,12 +70,19 @@ public final class Constants {
     private Drivebase() {}
 
     /**
-     * Distance from robot center to each module, from the YAGSL module {@code location} blocks
-     * (front/left, in inches). All four sit 5.9375 in from center on both axes.
+     * Distance from robot center to each module, in inches, half the tread-center-to-tread-center
+     * spacing. Measured on the robot: 10 in between the inner tread edges and 12 in across the
+     * outer edges with 1 in treads, so the contact patches are 11 in apart and each sits 5.5 in
+     * from center on both axes.
+     *
+     * <p>This replaces the 5.9375 the YAGSL module {@code location} blocks declared, which was
+     * 7.4% too wide. It matters more than it looks: kinematics converts between wheel speeds and
+     * chassis motion through this number, so an oversized track radius makes the robot rotate
+     * faster than commanded and biases every wheel-radius estimate taken from a spin.
      */
-    public static final double TRACK_RADIUS_X = Units.inchesToMeters(5.9375);
+    public static final double TRACK_RADIUS_X = Units.inchesToMeters(5.5);
 
-    public static final double TRACK_RADIUS_Y = Units.inchesToMeters(5.9375);
+    public static final double TRACK_RADIUS_Y = Units.inchesToMeters(5.5);
 
     /**
      * Module translations in the WPILib convention (+x forward, +y left), ordered front-left,
@@ -113,14 +120,28 @@ public final class Constants {
   public static final class Module {
     private Module() {}
 
-    /** Wheel diameter, from the YAGSL physicalproperties {@code drive.diameter} (inches). */
-    public static final double WHEEL_RADIUS = Units.inchesToMeters(2.0) / 2.0;
+    /**
+     * Wheel radius, in inches. Calipered at 1.97-1.98 in diameter, so the nominal 2 in wheel the
+     * YAGSL physicalproperties {@code drive.diameter} declared, worn very slightly under.
+     */
+    public static final double WHEEL_RADIUS = Units.inchesToMeters(1.975) / 2.0;
 
     /**
      * Drive reduction, from the YAGSL physicalproperties {@code drive.gearRatio}. 1.36 is a very low
-     * reduction for a swerve module — most are between 4:1 and 8:1 — but it is what the YAGSL
-     * config declared, so it is carried across unchanged. Worth confirming against the physical
-     * module before driving at speed.
+     * reduction for a swerve module — most are between 4:1 and 8:1 — and it is the last number in
+     * this block still taken on faith from that config rather than measured.
+     *
+     * <p>It is also the prime suspect for a residual. With the wheel radius and track radius above
+     * both now measured, a spin at a reported 9.91 rad/s of wheel speed should turn the robot at
+     * 1.258 rad/s; the gyro measured 1.404, so the robot turns 11.6% faster than the drivetrain
+     * model says it should. A true reduction of 1.219 would account for all of it, and nothing
+     * else in the chain is unmeasured.
+     *
+     * <p>Do not take that 1.219 from the spin, though — it leans on the gyro's scale factor and on
+     * a manoeuvre where every wheel scrubs. The clean test needs neither: block the robot up, mark
+     * a wheel, turn it by hand exactly ten revolutions, and read {@code DrivePositionRad}. If 1.36
+     * is right it reports 10 revolutions (62.83 rad). If the reduction is really 1.219 it reports
+     * 8.96 (56.30 rad). Whatever it reports, the true reduction is 1.36 times reported over actual.
      */
     public static final double DRIVE_GEAR_RATIO = 1.36;
 
@@ -193,15 +214,15 @@ public final class Constants {
      *
      * <p>On hardware 0.2 turned the loop into a bang-bang oscillator. Simulation has no static
      * friction to fall below; the real drive does. At a 10 rad/s setpoint the feedforward sits at
-     * {@link #DRIVE_KS} + {@link #DRIVE_KV} * 10 = 0.693 V, only 0.27 V above the 0.423 V it takes
-     * to break the wheel loose at all. At kP 0.2 that margin is spent by 1.35 rad/s of overspeed,
+     * {@link #DRIVE_KS} + {@link #DRIVE_KV} * 10 = 0.690 V, only 0.27 V above the 0.423 V it takes
+     * to break the wheel loose at all. At kP 0.2 that margin is spent by 1.33 rad/s of overspeed,
      * so the loop kept commanding itself below breakaway: in the spin step response the command sat
      * under kS 40% of the time, the wheel coasted down, the command slammed back over kS, and the
      * whole thing limit-cycled at 2.8 Hz with the wheel surging between 2 and 23 rad/s against a
      * 10 rad/s setpoint. The mean looked perfect throughout — the SPARK's filtered velocity signal
      * hides most of the amplitude, and it only shows up in raw encoder position.
      *
-     * <p>0.02 keeps the command above kS through +/-13.5 rad/s of error, which covers the observed
+     * <p>0.02 keeps the command above kS through +/-13.3 rad/s of error, which covers the observed
      * swing. The feedforward was already carrying the load unaided (measured mean applied voltage
      * matched the feedforward-alone prediction), so there is little for proportional to do here;
      * its job is trimming, not driving. Raise it from the dashboard if you want, but the ceiling is
