@@ -29,6 +29,14 @@ import org.wpilib.system.Timer;
  * {@code Drive.zeroHeading()} would set its pose's rotation to zero for exactly one loop before
  * the next {@code updateInputs} call overwrote it with the RioBridge's unzeroed yaw again.
  *
+ * <p><b>Sign convention:</b> the navX reports yaw clockwise-positive and the RioBridge passes
+ * {@code AHRS.getYaw()} across the wire untouched, while WPILib is counter-clockwise-positive
+ * everywhere. {@link #yawFromNavx} and {@link #yawRateFromNavx} flip it on the way in. Without
+ * that, a commanded counter-clockwise spin logs as a negative yaw rate -- measured at -1.404 rad/s
+ * against a commanded +1.191 -- and every heading-dependent thing downstream runs backwards:
+ * field-oriented drive steers the wrong way as the robot turns, and odometry curves the pose off
+ * the opposite side of the field.
+ *
  * <p>Construct one {@link RioBridgeCan} per robot (it owns the CAN reads for all three RioBridge
  * frames) and share it with whatever reads the encoders -- see {@code ModuleIOSpark} -- don't
  * construct a second one here.
@@ -53,10 +61,23 @@ public class GyroIORioBridge implements GyroIO {
         latest != null
             && (Timer.getMonotonicTimestamp() - latest.timestampSeconds()) < STALE_THRESHOLD_SECONDS;
     if (latest != null) {
-      lastRawYaw = Rotation2d.fromDegrees(latest.attitude().yawDeg());
+      lastRawYaw = yawFromNavx(latest.attitude().yawDeg());
       inputs.yawPosition = lastRawYaw.minus(yawOffset);
-      inputs.yawVelocityRadPerSec = Math.toRadians(latest.attitude().yawRateDegPerSec());
+      inputs.yawVelocityRadPerSec = yawRateFromNavx(latest.attitude().yawRateDegPerSec());
     }
+  }
+
+  /**
+   * The navX's clockwise-positive yaw as a WPILib counter-clockwise-positive rotation. The offset
+   * in {@link #resetYaw()} is captured after this conversion, so both stay in WPILib's convention.
+   */
+  static Rotation2d yawFromNavx(double navxYawDeg) {
+    return Rotation2d.fromDegrees(-navxYawDeg);
+  }
+
+  /** The navX's clockwise-positive yaw rate as counter-clockwise-positive radians per second. */
+  static double yawRateFromNavx(double navxYawRateDegPerSec) {
+    return Math.toRadians(-navxYawRateDegPerSec);
   }
 
   @Override
