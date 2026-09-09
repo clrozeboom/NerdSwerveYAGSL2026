@@ -163,7 +163,11 @@ public class ModuleIOSpark implements ModuleIO {
         .idleMode(IdleMode.kBrake)
         .smartCurrentLimit(Constants.Module.DRIVE_CURRENT_LIMIT)
         .voltageCompensation(Constants.Module.NOMINAL_VOLTAGE)
-        .openLoopRampRate(Constants.Module.DRIVE_RAMP_RATE);
+        .openLoopRampRate(Constants.Module.DRIVE_RAMP_RATE)
+        // The open-loop rate above does not apply to the velocity loop this module actually runs
+        // in, so the closed-loop rate is what keeps the SPARK from slamming its output across the
+        // static-friction voltage and back every few ticks. See DRIVE_CLOSED_LOOP_RAMP_RATE.
+        .closedLoopRampRate(Constants.Module.DRIVE_CLOSED_LOOP_RAMP_RATE);
     driveConfig.encoder.positionConversionFactor(DRIVE_POSITION_FACTOR);
     driveConfig.encoder.velocityConversionFactor(DRIVE_VELOCITY_FACTOR);
     driveConfig.closedLoop.pid(

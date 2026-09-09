@@ -137,6 +137,18 @@ public final class Constants {
 
     public static final double TURN_RAMP_RATE = 0.25;
 
+    /**
+     * Closed-loop ramp rate in seconds for the drive SPARK, seconds from neutral to full output.
+     *
+     * <p>The open-loop rate above does not apply to {@code ControlType.kVelocity}, so until this
+     * was set nothing stopped the onboard velocity loop from slamming its output across the whole
+     * range in a single 1 ms tick — in the spin step response the command swung 0.05 V to 1.55 V
+     * and back at 2.8 Hz. Slew-limiting the output is the second half of the fix for that, next to
+     * the reduced {@link #DRIVE_KP}: it bounds how fast the loop can dive below the static-friction
+     * voltage and slam back over it.
+     */
+    public static final double DRIVE_CLOSED_LOOP_RAMP_RATE = 0.15;
+
     /** Nominal battery voltage, from the YAGSL {@code optimalVoltage}. */
     public static final double NOMINAL_VOLTAGE = 12.0;
 
@@ -176,11 +188,26 @@ public final class Constants {
      *
      * <p>The YAGSL carry-over here was 0.001, which is not a tune at all in these units — it gives
      * 0.012 V of authority at full speed, so the wheel neither reached its setpoint nor stopped
-     * when asked. 0.2 reaches 95% of a step in 1.08 s with no overshoot in simulation. Simulation
-     * has none of the latency or backlash real hardware does, so treat this as a starting point
-     * with margin and raise it from the dashboard.
+     * when asked. 0.2 replaced it, sized in simulation, where it reaches 95% of a step in 1.08 s
+     * with no overshoot.
+     *
+     * <p>On hardware 0.2 turned the loop into a bang-bang oscillator. Simulation has no static
+     * friction to fall below; the real drive does. At a 10 rad/s setpoint the feedforward sits at
+     * {@link #DRIVE_KS} + {@link #DRIVE_KV} * 10 = 0.693 V, only 0.27 V above the 0.423 V it takes
+     * to break the wheel loose at all. At kP 0.2 that margin is spent by 1.35 rad/s of overspeed,
+     * so the loop kept commanding itself below breakaway: in the spin step response the command sat
+     * under kS 40% of the time, the wheel coasted down, the command slammed back over kS, and the
+     * whole thing limit-cycled at 2.8 Hz with the wheel surging between 2 and 23 rad/s against a
+     * 10 rad/s setpoint. The mean looked perfect throughout — the SPARK's filtered velocity signal
+     * hides most of the amplitude, and it only shows up in raw encoder position.
+     *
+     * <p>0.02 keeps the command above kS through +/-13.5 rad/s of error, which covers the observed
+     * swing. The feedforward was already carrying the load unaided (measured mean applied voltage
+     * matched the feedforward-alone prediction), so there is little for proportional to do here;
+     * its job is trimming, not driving. Raise it from the dashboard if you want, but the ceiling is
+     * the stiction floor above, not stability.
      */
-    public static final double DRIVE_KP = 0.2;
+    public static final double DRIVE_KP = 0.02;
 
     public static final double DRIVE_KD = 0.0;
 
