@@ -69,8 +69,28 @@ public interface ModuleIO {
     /** Turn speed, in radians per second of module rotation. */
     public double turnVelocityRadPerSec = 0.0;
 
-    /** Voltage the turn motor is currently applying. */
+    /** Voltage the turn motor is currently applying, as reported back by the controller. */
     public double turnAppliedVolts = 0.0;
+
+    /**
+     * Voltage the turn loop <i>asked</i> for this cycle, before the controller had any say.
+     *
+     * <p>Logged separately from {@link #turnAppliedVolts} because the two answer different
+     * questions and only the pair together locates a fault. On 2026-09-09 all four modules sat at
+     * zero applied volts with tens of degrees of error, while the loop ran at a steady 20 ms, every
+     * connectivity flag read true and the absolute encoders kept updating. Measured volts alone
+     * cannot tell you whether the controller asked for nothing or asked and was ignored.
+     */
+    public double turnCommandedVolts = 0.0;
+
+    /**
+     * Whether the turn loop currently has a heading to drive to.
+     *
+     * <p>False means nothing has commanded one since the last open-loop call, which is the one path
+     * through {@code runTurnControl} that deliberately outputs zero. Logging it distinguishes that
+     * from a controller that wanted voltage and did not get it.
+     */
+    public boolean turnClosedLoopActive = false;
 
     /** Turn motor supply current, in amps. */
     public double turnCurrentAmps = 0.0;

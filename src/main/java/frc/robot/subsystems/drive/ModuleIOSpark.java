@@ -239,19 +239,22 @@ public class ModuleIOSpark implements ModuleIO {
    * @param encoderFresh whether that reading is recent enough to steer on
    * @param motorMeasured the turn motor's own idea of the heading, used when it is not
    */
-  private void runTurnControl(Rotation2d measured, boolean encoderFresh, Rotation2d motorMeasured) {
+  private double runTurnControl(
+      Rotation2d measured, boolean encoderFresh, Rotation2d motorMeasured) {
     if (turnSetpoint == null) {
       turnController.reset();
       turnSpark.setVoltage(0.0);
-      return;
+      return 0.0;
     }
     Rotation2d feedback = encoderFresh ? measured : motorMeasured;
     double volts = turnController.calculate(feedback.getRadians(), turnSetpoint.getRadians());
     // getError() is the wrapped error the controller just used, so this picks the same short way
     // round the circle that the proportional term did.
     volts += turnFeedforwardVolts(turnController.getError(), turnKs, turnFeedforwardToleranceRad);
-    turnSpark.setVoltage(
-        Math.clamp(volts, -Constants.Module.NOMINAL_VOLTAGE, Constants.Module.NOMINAL_VOLTAGE));
+    double commanded =
+        Math.clamp(volts, -Constants.Module.NOMINAL_VOLTAGE, Constants.Module.NOMINAL_VOLTAGE);
+    turnSpark.setVoltage(commanded);
+    return commanded;
   }
 
   /**
@@ -333,8 +336,10 @@ public class ModuleIOSpark implements ModuleIO {
     // Control works from the module, not the motor -- see ModuleIOInputs.turnPosition.
     inputs.turnPosition = inputs.turnAbsolutePosition;
     inputs.turnMotorPosition = new Rotation2d(turnPosition.get(0.0));
-    runTurnControl(
-        inputs.turnAbsolutePosition, inputs.turnEncoderConnected, inputs.turnMotorPosition);
+    inputs.turnClosedLoopActive = turnSetpoint != null;
+    inputs.turnCommandedVolts =
+        runTurnControl(
+            inputs.turnAbsolutePosition, inputs.turnEncoderConnected, inputs.turnMotorPosition);
     inputs.turnVelocityRadPerSec = turnVelocity.get(inputs.turnVelocityRadPerSec);
     inputs.turnAppliedVolts = turnOutput.get(0.0) * turnBusVolts.get(0.0);
     inputs.turnCurrentAmps = turnSpark.getOutputCurrent().get(0.0);
