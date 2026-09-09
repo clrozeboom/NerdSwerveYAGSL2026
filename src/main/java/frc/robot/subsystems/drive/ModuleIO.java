@@ -49,8 +49,22 @@ public interface ModuleIO {
     /** Absolute module heading, already offset-corrected. */
     public Rotation2d turnAbsolutePosition = Rotation2d.kZero;
 
-    /** Module heading as tracked by the turn motor's own encoder. */
+    /**
+     * The module heading control works from.
+     *
+     * <p>On real hardware this is the absolute encoder, not the turn motor's own encoder. The two
+     * differ by however much backlash is currently taken up in the steering gearbox — measured at
+     * 7-10 degrees on this robot — and it is the module that has to end up pointing the right way,
+     * not the motor.
+     */
     public Rotation2d turnPosition = Rotation2d.kZero;
+
+    /**
+     * Where the turn motor's own encoder thinks the module is, kept only so the backlash stays
+     * visible. Subtract this from {@link #turnPosition} to see the current lash; a growing gap
+     * while the motor pushes and the module does not move is the signature.
+     */
+    public Rotation2d turnMotorPosition = Rotation2d.kZero;
 
     /** Turn speed, in radians per second of module rotation. */
     public double turnVelocityRadPerSec = 0.0;

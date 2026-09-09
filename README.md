@@ -214,6 +214,22 @@ on the way over:
   latency or backlash real hardware does, so these are starting points with margin — raise them
   from the dashboard, then write back what works.
 
+  **The turn loop closes on the absolute encoder, not the turn motor.** This robot has 7-10
+  degrees of backlash between each turn motor and its module, measured from a step-response log:
+  the motor reaches its setpoint and the module is still short by the lash. Closing on the motor
+  puts the *motor* where it was asked and leaves the wheel anywhere in that band, so the loop moved
+  off the SPARK MAX's onboard controller and into `ModuleIOSpark`, running against the RioBridge
+  absolute reading at the robot loop's 50 Hz. The cost is rate and latency (the SPARK's own loop ran
+  at kHz with no transport in the way); steering is slow enough that this is fine, but it is why
+  there is no derivative term by default — the measurement occasionally repeats for several loops,
+  and differentiating that gives spikes rather than damping. If the absolute reading goes stale the
+  loop falls back to the motor encoder rather than stopping: wrong by the lash, which mid-match
+  beats not steering.
+
+  A useful side effect: `ModuleIOSim` already closed its turn loop this way, so `TURN_KP` now means
+  the same thing in simulation and on the robot, and the volts→duty conversion below applies only
+  to the drive loop.
+
   **Gains here are in volts per unit of error.** `ModuleIOSim` applies that directly; a SPARK MAX
   closed loop works in duty cycle instead, so `ModuleIOSpark` divides by `NOMINAL_VOLTAGE` on the
   way in. Skip that conversion and every gain is 12× too aggressive on the robot while looking
@@ -232,6 +248,28 @@ Every one of these has a bring-up routine that measures it — see below.
 ---
 
 ## Bring-up and tuning
+
+### Watching it in AdvantageScope
+
+The drivetrain publishes what AdvantageScope's **Swerve** tab reads, so module states can be watched
+directly rather than inferred from four separate angle plots:
+
+| Key | What |
+| --- | --- |
+| `SwerveStates/Measured` | where the modules actually are |
+| `SwerveStates/Setpoints` | what kinematics asked for |
+| `SwerveStates/SetpointsOptimized` | what the modules were given, after `optimize()` may have flipped a wheel |
+| `SwerveChassisVelocities/Measured` | chassis velocity |
+| `Odometry/RobotRotation`, `Odometry/Robot` | heading and pose |
+
+Both setpoint variants are published because plotting the raw request against measured makes
+`optimize()`'s flips look like tracking failures when they are the controller doing its job.
+
+Note the 2027 rename: these are `SwerveModuleVelocity[]`, not `SwerveModuleState[]`. AdvantageScope
+2027 reads the new name natively; an older copy pointed at these logs will not find them.
+
+`Drive/TurnMotorAngles` is not part of the tab — it is where the turn motors think they are, against
+`SwerveStates/Measured`'s module angles. The gap between them is the backlash.
 
 Several numbers above are inherited rather than measured, so the project ships routines that turn
 each of them into a measurement. They appear on the **auto chooser** (the one place a command can be

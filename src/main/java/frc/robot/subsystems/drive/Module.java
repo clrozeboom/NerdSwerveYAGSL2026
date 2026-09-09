@@ -85,8 +85,10 @@ public class Module {
    * Commands a module state, taking the shorter path to the requested angle.
    *
    * @param state the desired wheel speed and module heading
+   * @return what was actually commanded after optimization and cosine scaling, which is what a
+   *     setpoint-vs-measured comparison should be drawn against rather than the raw request
    */
-  public void runSetpoint(SwerveModuleVelocity state) {
+  public SwerveModuleVelocity runSetpoint(SwerveModuleVelocity state) {
     SwerveModuleVelocity optimized = state.optimize(getAngle());
     // Scale the wheel speed down while the module is still turning into place, so the robot does not
     // lurch sideways during the first few milliseconds of a direction change.
@@ -94,6 +96,7 @@ public class Module {
 
     io.setDriveVelocity(optimized.velocity / Constants.Module.WHEEL_RADIUS);
     io.setTurnPosition(optimized.angle);
+    return optimized;
   }
 
   /**
@@ -151,6 +154,11 @@ public class Module {
   /** Wheel travel and heading, for odometry. */
   public SwerveModulePosition getPosition() {
     return new SwerveModulePosition(getPositionMeters(), getAngle());
+  }
+
+  /** Where the turn motor's encoder thinks this module is, for seeing steering backlash. */
+  public Rotation2d getMotorAngle() {
+    return inputs.turnMotorPosition;
   }
 
   /** Wheel speed and heading, for chassis-velocity estimation. */

@@ -103,6 +103,27 @@ public class Drive extends SubsystemBase {
     Logger.recordOutput("Drive/MeasuredVx", measured.vx);
     Logger.recordOutput("Drive/MeasuredVy", measured.vy);
     Logger.recordOutput("Drive/MeasuredOmega", measured.omega);
+
+    // The rest of what AdvantageScope's Swerve tab wants. Published from periodic() rather than
+    // from runVelocity() so the tab keeps updating while disabled and while a tuning routine that
+    // bypasses runVelocity() is driving the modules directly.
+    SwerveModuleVelocity[] measuredStates = new SwerveModuleVelocity[modules.length];
+    Rotation2d[] motorAngles = new Rotation2d[modules.length];
+    for (int i = 0; i < modules.length; i++) {
+      measuredStates[i] = modules[i].getVelocity();
+      motorAngles[i] = modules[i].getMotorAngle();
+    }
+    Logger.recordOutput("SwerveStates/Measured", measuredStates);
+    Logger.recordOutput("SwerveChassisVelocities/Measured", measured);
+    // The tab needs a robot rotation to orient the modules against; it wants a Rotation2d, not the
+    // degrees already logged above for plotting.
+    Logger.recordOutput("Odometry/RobotRotation", getRotation());
+    Logger.recordOutput("Odometry/Robot", pose);
+
+    // Not for the Swerve tab: where the turn motors think they are, against where the modules
+    // actually are. The gap is the steering backlash, and it is the reason the turn loop closes on
+    // the absolute encoder rather than on these.
+    Logger.recordOutput("Drive/TurnMotorAngles", motorAngles);
     field.setRobotPose(pose);
   }
 
@@ -148,9 +169,18 @@ public class Drive extends SubsystemBase {
         SwerveDriveKinematics.desaturateWheelVelocities(
             kinematics.toSwerveModuleVelocities(discretized), getMaxLinearSpeed());
 
+    SwerveModuleVelocity[] optimized = new SwerveModuleVelocity[modules.length];
     for (int i = 0; i < modules.length; i++) {
-      modules[i].runSetpoint(setpoints[i]);
+      optimized[i] = modules[i].runSetpoint(setpoints[i]);
     }
+
+    // AdvantageScope's Swerve tab reads these as struct arrays. Setpoints is what kinematics asked
+    // for; SetpointsOptimized is what the modules were actually given after optimize() may have
+    // flipped a wheel and driven it backwards instead of steering 180 degrees. Plotting the raw
+    // request against measured makes those flips look like tracking failures, which is why both
+    // are published.
+    Logger.recordOutput("SwerveStates/Setpoints", setpoints);
+    Logger.recordOutput("SwerveStates/SetpointsOptimized", optimized);
 
     Logger.recordOutput("Drive/SetpointVx", discretized.vx);
     Logger.recordOutput("Drive/SetpointVy", discretized.vy);
@@ -167,10 +197,15 @@ public class Drive extends SubsystemBase {
    * each module's position relative to robot centre.
    */
   public void stopWithX() {
+    SwerveModuleVelocity[] commanded = new SwerveModuleVelocity[modules.length];
     for (int i = 0; i < modules.length; i++) {
       Rotation2d angle = Constants.Drivebase.MODULE_TRANSLATIONS[i].getAngle();
-      modules[i].runSetpoint(new SwerveModuleVelocity(0.0, angle));
+      commanded[i] = modules[i].runSetpoint(new SwerveModuleVelocity(0.0, angle));
     }
+    // Publish these too, so holding the X shows up in the Swerve tab rather than the tab freezing
+    // on whatever runVelocity() last commanded.
+    Logger.recordOutput("SwerveStates/Setpoints", commanded);
+    Logger.recordOutput("SwerveStates/SetpointsOptimized", commanded);
   }
 
   /** Runs every drive motor open-loop at the same voltage, for feedforward characterization. */

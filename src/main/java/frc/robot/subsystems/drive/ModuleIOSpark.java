@@ -19,6 +19,7 @@ import frc.robot.Constants;
 import frc.robot.Constants.ModuleConfig;
 import frc.robot.protocol.CanFrames.EncodersFrame;
 import frc.robot.subsystems.drive.riobridge.RioBridgeCan;
+import org.wpilib.math.controller.PIDController;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.util.MathUtil;
 import org.wpilib.system.Timer;
@@ -72,7 +73,31 @@ public class ModuleIOSpark implements ModuleIO {
   private final RelativeEncoder driveEncoder;
   private final RelativeEncoder turnEncoder;
   private final SparkClosedLoopController driveController;
-  private final SparkClosedLoopController turnController;
+  /**
+   * The turn loop, closed here on the absolute encoder rather than on the SPARK MAX's onboard
+   * controller.
+   *
+   * <p>The SPARK's own loop can only see the turn motor's encoder, and this robot has 7-10 degrees
+   * of backlash between that motor and the module. Closing on the motor puts the *motor* where it
+   * was asked and leaves the module anywhere inside the lash band; closing on the absolute encoder
+   * puts the module where it was asked and lets the motor take up whatever lash it needs.
+   *
+   * <p>The cost is loop rate and latency: this runs at the robot loop's 50 Hz against the SPARK's
+   * internal kHz, and the measurement arrives over CAN from the RioBridge (median 20 ms, but with
+   * a tail out past 150 ms). Steering is slow enough for that to be fine — a module slews 157
+   * degrees in 0.4 s — but it is why there is no derivative term by default: differentiating a
+   * signal that sometimes repeats for several loops produces spikes, not damping.
+   *
+   * <p>A side effect worth having: {@code ModuleIOSim} already closes its turn loop exactly this
+   * way, so {@code TURN_KP} now means the same thing in simulation and on the robot, in volts per
+   * radian of error. It no longer goes through {@link #voltsPerErrorToDuty}, which applies only to
+   * gains handed to a SPARK's onboard loop -- the drive loop still is one.
+   */
+  private final PIDController turnController =
+      new PIDController(Constants.Module.TURN_KP, 0.0, Constants.Module.TURN_KD);
+
+  /** Heading the turn loop is driving towards, or null when nothing has commanded one yet. */
+  private Rotation2d turnSetpoint = null;
   private final RioBridgeCan rioBridgeCan;
   private final int encoderChannel;
   private final Rotation2d absoluteEncoderOffset;
@@ -83,6 +108,10 @@ public class ModuleIOSpark implements ModuleIO {
   /**
    * Converts a gain expressed in volts per unit of error into the duty cycle a SPARK MAX closed
    * loop wants.
+   *
+   * <p>Applies to the <b>drive</b> loop only, which is the one still running on a SPARK. The turn
+   * loop moved into this class (see {@link #turnController}) and takes its gains in volts directly,
+   * so it does not go through here.
    *
    * <p>This project states its PID gains in volts per unit of error, because that is what
    * {@code ModuleIOSim} applies and what makes a gain comparable between the two IO layers. A SPARK
@@ -112,7 +141,10 @@ public class ModuleIOSpark implements ModuleIO {
     driveEncoder = driveSpark.getEncoder();
     turnEncoder = turnSpark.getEncoder();
     driveController = driveSpark.getClosedLoopController();
-    turnController = turnSpark.getClosedLoopController();
+
+    // The module wraps, so let the controller take the short way round rather than unwinding.
+    // This replaces the SPARK's positionWrapping config, which only applied to its onboard loop.
+    turnController.enableContinuousInput(-Math.PI, Math.PI);
 
     this.rioBridgeCan = Constants.Module.HAS_ABSOLUTE_ENCODERS ? rioBridgeCan : null;
     this.encoderChannel = config.encoderChannel;
@@ -140,13 +172,9 @@ public class ModuleIOSpark implements ModuleIO {
         .openLoopRampRate(Constants.Module.TURN_RAMP_RATE);
     turnConfig.encoder.positionConversionFactor(TURN_POSITION_FACTOR);
     turnConfig.encoder.velocityConversionFactor(TURN_VELOCITY_FACTOR);
-    // The module wraps, so let the controller take the short way round rather than unwinding.
-    turnConfig.closedLoop.positionWrappingEnabled(true);
-    turnConfig.closedLoop.positionWrappingInputRange(-Math.PI, Math.PI);
-    turnConfig.closedLoop.pid(
-        voltsPerErrorToDuty(Constants.Module.TURN_KP),
-        0.0,
-        voltsPerErrorToDuty(Constants.Module.TURN_KD));
+    // No closed-loop config for the turn SPARK any more: the position loop lives here now, on the
+    // absolute encoder, and this controller is driven open-loop with the voltage it asks for. The
+    // motor encoder is still configured because it is worth logging for backlash.
     turnSpark.configure(turnConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     // With an absolute encoder the module can work out where it is pointing on its own. Without one
@@ -180,6 +208,39 @@ public class ModuleIOSpark implements ModuleIO {
               + "s at boot -- seeding this module as if aligned. Check the RioBridge is powered"
               + " and transmitting, then re-zero with the \"Zero Modules\" routine.");
     }
+  }
+
+  /**
+   * Drives the turn motor towards {@link #turnSetpoint} using the module's own measured heading.
+   *
+   * <p>Refuses to act on a stale reading. The RioBridge delivers encoders at a median 20 ms but
+   * with a tail past 150 ms, and a position loop fed a frozen measurement keeps pushing on an error
+   * it can no longer see shrinking -- which on a steering motor means winding harder into the
+   * gearbox until the frame finally arrives. Coasting until it does is the safe failure: the module
+   * stops where it is instead of being driven blind.
+   *
+   * <p>Falls back to the turn motor's own encoder when the absolute reading goes stale, rather than
+   * stopping. Steering on the motor is what this code did before the backlash was measured: it is
+   * wrong by however much lash is taken up, but a module that steers to within 10 degrees is worth
+   * a great deal more mid-match than one that has stopped steering. The two encoders share a frame
+   * -- the motor's is seeded from the absolute at boot -- so the same setpoint means the same thing
+   * to both, and switching between them costs a step in the output and nothing else, there being no
+   * integral term to wind up.
+   *
+   * @param measured the module heading read this cycle
+   * @param encoderFresh whether that reading is recent enough to steer on
+   * @param motorMeasured the turn motor's own idea of the heading, used when it is not
+   */
+  private void runTurnControl(Rotation2d measured, boolean encoderFresh, Rotation2d motorMeasured) {
+    if (turnSetpoint == null) {
+      turnController.reset();
+      turnSpark.setVoltage(0.0);
+      return;
+    }
+    Rotation2d feedback = encoderFresh ? measured : motorMeasured;
+    double volts = turnController.calculate(feedback.getRadians(), turnSetpoint.getRadians());
+    turnSpark.setVoltage(
+        Math.clamp(volts, -Constants.Module.NOMINAL_VOLTAGE, Constants.Module.NOMINAL_VOLTAGE));
   }
 
   private Rotation2d readAbsolutePosition() {
@@ -231,7 +292,11 @@ public class ModuleIOSpark implements ModuleIO {
             && (Timer.getMonotonicTimestamp() - rioBridgeCan.latestEncodersTimestampSeconds())
                 < ENCODER_STALE_THRESHOLD_SECONDS;
     inputs.turnAbsolutePosition = readAbsolutePosition();
-    inputs.turnPosition = new Rotation2d(turnPosition.get(0.0));
+    // Control works from the module, not the motor -- see ModuleIOInputs.turnPosition.
+    inputs.turnPosition = inputs.turnAbsolutePosition;
+    inputs.turnMotorPosition = new Rotation2d(turnPosition.get(0.0));
+    runTurnControl(
+        inputs.turnAbsolutePosition, inputs.turnEncoderConnected, inputs.turnMotorPosition);
     inputs.turnVelocityRadPerSec = turnVelocity.get(inputs.turnVelocityRadPerSec);
     inputs.turnAppliedVolts = turnOutput.get(0.0) * turnBusVolts.get(0.0);
     inputs.turnCurrentAmps = turnSpark.getOutputCurrent().get(0.0);
@@ -244,6 +309,8 @@ public class ModuleIOSpark implements ModuleIO {
 
   @Override
   public void setTurnOpenLoop(double volts) {
+    // Hand control back from the position loop, or the two write opposing voltages every cycle.
+    turnSetpoint = null;
     turnSpark.setVoltage(volts);
   }
 
@@ -256,8 +323,10 @@ public class ModuleIOSpark implements ModuleIO {
 
   @Override
   public void setTurnPosition(Rotation2d rotation) {
-    turnController.setSetpoint(
-        MathUtil.angleModulus(rotation.getRadians()), ControlType.kPosition);
+    // Only records the target. The loop itself runs in updateInputs(), so that every cycle it acts
+    // on the absolute reading taken that same cycle rather than one from wherever in the loop this
+    // happened to be called.
+    turnSetpoint = rotation;
   }
 
   @Override
@@ -273,9 +342,10 @@ public class ModuleIOSpark implements ModuleIO {
 
   @Override
   public void setTurnGains(double kP, double kD) {
-    SparkMaxConfig config = new SparkMaxConfig();
-    config.closedLoop.pid(voltsPerErrorToDuty(kP), 0.0, voltsPerErrorToDuty(kD));
-    turnSpark.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);
+    // Retunes the local controller rather than reconfiguring the SPARK: the turn loop no longer
+    // runs on the controller, so there is nothing to push over CAN and a dashboard edit takes
+    // effect on the very next cycle. Gains stay in volts per radian, unconverted.
+    turnController.setPID(kP, 0.0, kD);
   }
 
   @Override

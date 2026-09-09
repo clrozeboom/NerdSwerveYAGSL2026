@@ -119,6 +119,10 @@ public class ModuleIOSim implements ModuleIO {
     inputs.turnEncoderConnected = true;
     inputs.turnAbsolutePosition = new Rotation2d(turnSim.getAngularPosition());
     inputs.turnPosition = new Rotation2d(turnSim.getAngularPosition());
+    // The sim models a rigid gearbox, so motor and module always agree and the backlash the real
+    // robot has (7-10 degrees) simply is not represented. Reported anyway so the key exists in
+    // both, but do not read a zero gap here as evidence of anything.
+    inputs.turnMotorPosition = new Rotation2d(turnSim.getAngularPosition());
     inputs.turnVelocityRadPerSec = turnSim.getAngularVelocity();
     inputs.turnAppliedVolts = turnAppliedVolts;
     inputs.turnCurrentAmps = Math.abs(turnSim.getCurrentDraw());
