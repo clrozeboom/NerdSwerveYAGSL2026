@@ -98,6 +98,13 @@ public class ModuleIOSpark implements ModuleIO {
 
   /** Heading the turn loop is driving towards, or null when nothing has commanded one yet. */
   private Rotation2d turnSetpoint = null;
+
+  /** This corner's measured steering breakaway voltage; see {@link ModuleConfig#turnKs}. */
+  private double turnKs;
+
+  /** Half-width of the band inside which the feedforward is dropped, in radians. */
+  private double turnFeedforwardToleranceRad =
+      Math.toRadians(Constants.Module.TURN_FEEDFORWARD_TOLERANCE_DEG);
   private final RioBridgeCan rioBridgeCan;
   private final int encoderChannel;
   private final Rotation2d absoluteEncoderOffset;
@@ -148,6 +155,7 @@ public class ModuleIOSpark implements ModuleIO {
 
     this.rioBridgeCan = Constants.Module.HAS_ABSOLUTE_ENCODERS ? rioBridgeCan : null;
     this.encoderChannel = config.encoderChannel;
+    this.turnKs = config.turnKs;
     absoluteEncoderOffset = Rotation2d.fromDegrees(config.absoluteEncoderOffsetDegrees);
 
     SparkMaxConfig driveConfig = new SparkMaxConfig();
@@ -239,8 +247,38 @@ public class ModuleIOSpark implements ModuleIO {
     }
     Rotation2d feedback = encoderFresh ? measured : motorMeasured;
     double volts = turnController.calculate(feedback.getRadians(), turnSetpoint.getRadians());
+    // getError() is the wrapped error the controller just used, so this picks the same short way
+    // round the circle that the proportional term did.
+    volts += turnFeedforwardVolts(turnController.getError(), turnKs, turnFeedforwardToleranceRad);
     turnSpark.setVoltage(
         Math.clamp(volts, -Constants.Module.NOMINAL_VOLTAGE, Constants.Module.NOMINAL_VOLTAGE));
+  }
+
+  /**
+   * The static-friction term: enough voltage to break the module loose, in whichever direction it
+   * needs to go, and nothing at all once it is close enough.
+   *
+   * <p>This exists because proportional action cannot solve stiction here. A module parks where the
+   * voltage its error produces drops below its breakaway, so shrinking that parked error by gain
+   * alone needs a kP around 12 on the stiffest corner -- and the turn loop goes unstable somewhere
+   * near there, because it closes over a 50 Hz link whose worst-case staleness is around 160 ms.
+   * kP 8 was enough to make the modules spin continuously rather than settle. Adding a fixed push
+   * instead defeats friction without touching loop gain, so it costs no stability margin.
+   *
+   * <p>The tolerance band is not a nicety. A fixed push that never switches off drives past the
+   * setpoint, gets pushed back, and hunts forever; dropping the term once inside the band is what
+   * makes the module settle, and it sets the accuracy the loop converges to.
+   *
+   * @param errorRad wrapped position error, positive when the module must turn positive
+   * @param ks this corner's breakaway voltage
+   * @param toleranceRad half-width of the band inside which no push is applied
+   * @return volts to add to the proportional output
+   */
+  static double turnFeedforwardVolts(double errorRad, double ks, double toleranceRad) {
+    if (Math.abs(errorRad) <= toleranceRad) {
+      return 0.0;
+    }
+    return Math.copySign(ks, errorRad);
   }
 
   private Rotation2d readAbsolutePosition() {
@@ -341,11 +379,13 @@ public class ModuleIOSpark implements ModuleIO {
   }
 
   @Override
-  public void setTurnGains(double kP, double kD) {
+  public void setTurnGains(double kP, double kD, double kS, double toleranceRad) {
     // Retunes the local controller rather than reconfiguring the SPARK: the turn loop no longer
     // runs on the controller, so there is nothing to push over CAN and a dashboard edit takes
     // effect on the very next cycle. Gains stay in volts per radian, unconverted.
     turnController.setPID(kP, 0.0, kD);
+    turnKs = kS;
+    turnFeedforwardToleranceRad = toleranceRad;
   }
 
   @Override

@@ -213,13 +213,37 @@ public final class Constants {
      * unit caveat as {@link #DRIVE_KP} applies — volts per radian of error, and this loop runs in
      * module radians.
      *
+     * <p><b>There is a hard ceiling on this gain, and it is lower than the value the parked error
+     * would suggest.</b> The turn loop closes over the RioBridge at the robot's 50 Hz, and that
+     * feedback has a stale tail — median 20 ms but p99 around 160 ms. A proportional loop driving a
+     * velocity plant goes unstable once gain × plant gain × delay exceeds about π/2, which for this
+     * drivetrain (~48 deg/s per volt, measured) puts the limit near kP 12 at the p99 delay. kP 8 was
+     * tried on 2026-09-09 and the modules span continuously through full revolutions rather than
+     * settling — 941 degrees of travel per second against 167 at kP 2.8.
+     *
+     * <p>Since the gain needed to overcome stiction by proportional action alone is roughly 12 for
+     * the stiffest corner, the two constraints do not overlap. That is what
+     * {@link ModuleConfig#turnKs} is for: it defeats friction without raising loop gain. Do not
+     * raise this to chase steady-state error.
+     *
      * <p>The YAGSL carry-over was 0.01, which left a commanded 90 degree module turn sitting at
      * 6.8 degrees three seconds later; the modules effectively did not steer. 2.0 completes the
      * same step in 0.52 s with no overshoot in simulation.
      */
-    public static final double TURN_KP = 2.0;
+    public static final double TURN_KP = 2.5;
 
     public static final double TURN_KD = 0.0;
+
+    /**
+     * How close a module has to be before the turn feedforward switches off, in degrees.
+     *
+     * <p>{@link ModuleConfig#turnKs} pushes at a fixed voltage whenever the module is outside this
+     * band, which is what defeats stiction. Inside it the term is dropped entirely: a fixed push
+     * that never switches off would drive straight past the setpoint, get pushed back, and hunt
+     * forever. This band is therefore the accuracy the loop can settle to -- there is no point
+     * setting it tighter than the absolute encoder can actually resolve.
+     */
+    public static final double TURN_FEEDFORWARD_TOLERANCE_DEG = 1.5;
 
     /** Simulated rotational inertia. Not a YAGSL value — only used by ModuleIOSim. */
     public static final double DRIVE_SIM_MOI = 0.025;
@@ -232,10 +256,10 @@ public final class Constants {
    * are exactly the values from the four YAGSL module JSONs.
    */
   public enum ModuleConfig {
-    FRONT_LEFT(1, 2, 0, 163.48, Module.DRIVE_KS, Module.DRIVE_KV),
-    FRONT_RIGHT(7, 8, 1, 338.55, Module.DRIVE_KS, Module.DRIVE_KV),
-    BACK_LEFT(3, 4, 2, 9.32, Module.DRIVE_KS, Module.DRIVE_KV),
-    BACK_RIGHT(5, 6, 3, 283.62, Module.DRIVE_KS, Module.DRIVE_KV);
+    FRONT_LEFT(1, 2, 0, 163.48, Module.DRIVE_KS, Module.DRIVE_KV, 0.43),
+    FRONT_RIGHT(7, 8, 1, 338.55, Module.DRIVE_KS, Module.DRIVE_KV, 0.15),
+    BACK_LEFT(3, 4, 2, 9.32, Module.DRIVE_KS, Module.DRIVE_KV, 0.22),
+    BACK_RIGHT(5, 6, 3, 283.62, Module.DRIVE_KS, Module.DRIVE_KV, 0.27);
 
     /** SPARK MAX CAN ID driving the wheel. */
     public final int driveCanId;
@@ -273,19 +297,33 @@ public final class Constants {
      */
     public final double driveKv;
 
+    /**
+     * Voltage this corner's steering needs before it will move at all, in volts.
+     *
+     * <p>Measured directly, not guessed: with only proportional control each module coasts to a
+     * stop where the voltage its remaining error produces falls below its own breakaway, and sits
+     * there holding exactly that voltage. Reading the held voltage out of a turn step response log
+     * therefore measures the friction. These four came from the 2026-09-09 runs, and the spread is
+     * real — front-left needs nearly three times front-right, which is worth a look at the module
+     * itself rather than only compensating for in software.
+     */
+    public final double turnKs;
+
     ModuleConfig(
         int driveCanId,
         int turnCanId,
         int encoderChannel,
         double offsetDegrees,
         double driveKs,
-        double driveKv) {
+        double driveKv,
+        double turnKs) {
       this.driveCanId = driveCanId;
       this.turnCanId = turnCanId;
       this.encoderChannel = encoderChannel;
       this.absoluteEncoderOffsetDegrees = offsetDegrees;
       this.driveKs = driveKs;
       this.driveKv = driveKv;
+      this.turnKs = turnKs;
     }
 
     /** All four corners in the canonical FL, FR, BL, BR order. */
