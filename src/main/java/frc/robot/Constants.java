@@ -226,11 +226,17 @@ public final class Constants {
      * {@link ModuleConfig#turnKs} is for: it defeats friction without raising loop gain. Do not
      * raise this to chase steady-state error.
      *
+     * <p>2.1 is tuned, not assumed. It was chosen against 2.5 on hardware over two sessions: both
+     * park accurately, but 2.5 overshoots roughly 34 degrees on the way to a setpoint against about
+     * 2 for 2.1. On a swerve module that overshoot is wheel scrub and a lurch, so the slower
+     * approach is worth the marginally larger parked error. A gain change that small mattering that
+     * much is itself a reminder of how close the delay ceiling is.
+     *
      * <p>The YAGSL carry-over was 0.01, which left a commanded 90 degree module turn sitting at
      * 6.8 degrees three seconds later; the modules effectively did not steer. 2.0 completes the
      * same step in 0.52 s with no overshoot in simulation.
      */
-    public static final double TURN_KP = 2.5;
+    public static final double TURN_KP = 2.1;
 
     public static final double TURN_KD = 0.0;
 
@@ -258,7 +264,7 @@ public final class Constants {
   public enum ModuleConfig {
     FRONT_LEFT(1, 2, 0, 163.48, Module.DRIVE_KS, Module.DRIVE_KV, 0.43),
     FRONT_RIGHT(7, 8, 1, 338.55, Module.DRIVE_KS, Module.DRIVE_KV, 0.15),
-    BACK_LEFT(3, 4, 2, 9.32, Module.DRIVE_KS, Module.DRIVE_KV, 0.22),
+    BACK_LEFT(3, 4, 2, 9.32, Module.DRIVE_KS, Module.DRIVE_KV, 0.30),
     BACK_RIGHT(5, 6, 3, 283.62, Module.DRIVE_KS, Module.DRIVE_KV, 0.27);
 
     /** SPARK MAX CAN ID driving the wheel. */

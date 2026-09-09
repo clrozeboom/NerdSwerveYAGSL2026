@@ -241,6 +241,12 @@ on the way over:
   the loop converges to. Both are live-tunable (`Tuning/Turn/<Module>/kS`,
   `Tuning/Turn/FeedforwardToleranceDeg`).
 
+  Tuned on hardware, 2026-09-09: `TURN_KP` 2.1 with per-module `turnKs`, giving a mean parked error
+  of **1.07 degrees** across 56 steps — every module settling in about a third of a second with
+  essentially no hunting, against 11.9 degrees before any of this work. `TURN_KP` 2.5 parks equally
+  well but overshoots ~34 degrees on the approach versus ~2, which on a swerve module is scrub and a
+  lurch, so 2.1 is the better trade.
+
   The four `turnKs` values are measured, not guessed: with proportional control only, each module
   parks where the voltage its error produces drops below its own breakaway and sits holding exactly
   that voltage, so the held voltage in a step-response log *is* the friction. Front-left needs
