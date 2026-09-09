@@ -70,6 +70,7 @@ public class Module {
     Logger.recordOutput("Drive/" + name + "/DrivePositionMeters", getPositionMeters());
     Logger.recordOutput("Drive/" + name + "/DriveVelocityMetersPerSec", getVelocityMetersPerSec());
     Logger.recordOutput("Drive/" + name + "/TurnPositionDeg", getAngle().getDegrees());
+    Logger.recordOutput("Drive/" + name + "/TurnAbsPositionDeg", getAbsolutePosition().getDegrees());
 
     // Push edited gains down to the controller, but only when something actually changed — on a
     // SPARK MAX each push is a CAN transaction.
