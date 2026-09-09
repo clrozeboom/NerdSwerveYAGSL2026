@@ -120,5 +120,5 @@ public interface ModuleIO {
    * @param kP proportional gain, in volts per radian of error
    * @param kD derivative gain
    */
-  default void setTurnGains(double kP, double kD) {}
+  default void setTurnGains(double kP, double kD, double kS, double toleranceRad) {}
 }

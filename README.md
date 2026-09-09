@@ -226,6 +226,30 @@ on the way over:
   loop falls back to the motor encoder rather than stopping: wrong by the lash, which mid-match
   beats not steering.
 
+  **There is a ceiling on `TURN_KP`, and it is lower than the parked error suggests.** Closing over
+  the bridge at 50 Hz means the feedback has a stale tail — median 20 ms, p99 around 160 ms — and a
+  proportional loop driving a velocity plant goes unstable once gain × plant gain × delay exceeds
+  about π/2. For this drivetrain (~48 °/s per volt, measured) that puts the limit near kP 12.
+  kP 8 was tried on 2026-09-09: the modules span continuously through full revolutions instead of
+  settling, travelling 941 °/s against 167 at kP 2.8.
+
+  Since beating stiction by proportional action alone would need about kP 12 on the stiffest corner,
+  **the two constraints do not overlap** — the dead zone cannot be tuned out with `TURN_KP`. That is
+  what the per-module turn `kS` is for: a fixed push in the direction of the error whenever the
+  module is outside a tolerance band, which defeats friction without raising loop gain and so costs
+  no stability margin. The band is what makes it settle rather than hunt, and it sets the accuracy
+  the loop converges to. Both are live-tunable (`Tuning/Turn/<Module>/kS`,
+  `Tuning/Turn/FeedforwardToleranceDeg`).
+
+  The four `turnKs` values are measured, not guessed: with proportional control only, each module
+  parks where the voltage its error produces drops below its own breakaway and sits holding exactly
+  that voltage, so the held voltage in a step-response log *is* the friction. Front-left needs
+  0.43 V against front-right's 0.15 V — nearly threefold, which is worth inspecting the module for
+  rather than only compensating for in software.
+
+  Shortening the bridge's worst-case staleness would raise the stability ceiling proportionally, so
+  that is where headroom comes from if this ever needs a much stiffer turn loop.
+
   A useful side effect: `ModuleIOSim` already closed its turn loop this way, so `TURN_KP` now means
   the same thing in simulation and on the robot, and the volts→duty conversion below applies only
   to the drive loop.

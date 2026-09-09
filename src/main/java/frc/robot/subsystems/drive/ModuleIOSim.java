@@ -38,6 +38,14 @@ public class ModuleIOSim implements ModuleIO {
   /** Width of the velocity band over which static friction is blended in; see {@link #driveFrictionVolts()}. */
   private static final double FRICTION_BLEND_RAD_PER_SEC = 0.25;
 
+  /** Accepted for interface parity with {@code ModuleIOSpark}; see {@link #setTurnGains}. */
+  @SuppressWarnings("unused")
+  private double turnKs = 0.0;
+
+  /** Accepted for interface parity with {@code ModuleIOSpark}; see {@link #setTurnGains}. */
+  @SuppressWarnings("unused")
+  private double turnFeedforwardToleranceRad = 0.0;
+
   private double driveKs = Constants.Module.DRIVE_KS;
   private double driveKv = Constants.Module.DRIVE_KV;
 
@@ -185,7 +193,12 @@ public class ModuleIOSim implements ModuleIO {
   }
 
   @Override
-  public void setTurnGains(double kP, double kD) {
+  public void setTurnGains(double kP, double kD, double kS, double toleranceRad) {
     turnController.setPID(kP, 0.0, kD);
+    // The sim's steering is frictionless, so there is nothing here for a breakaway term to
+    // overcome and applying it would only push the module past its setpoint. Accepted and ignored,
+    // deliberately, so the two IO layers keep the same interface.
+    turnKs = kS;
+    turnFeedforwardToleranceRad = toleranceRad;
   }
 }

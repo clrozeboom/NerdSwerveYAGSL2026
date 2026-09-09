@@ -31,6 +31,11 @@ public class Module {
   private static final TunableNumber turnKd =
       new TunableNumber("Tuning/Turn/kD", Constants.Module.TURN_KD);
 
+  // Shared, because it is an accuracy target rather than a property of any one corner.
+  private static final TunableNumber turnFeedforwardToleranceDeg =
+      new TunableNumber(
+          "Tuning/Turn/FeedforwardToleranceDeg", Constants.Module.TURN_FEEDFORWARD_TOLERANCE_DEG);
+
   private final ModuleIO io;
   private final ModuleIOInputsAutoLogged inputs = new ModuleIOInputsAutoLogged();
   private final String name;
@@ -42,19 +47,26 @@ public class Module {
   private final TunableNumber driveKs;
   private final TunableNumber driveKv;
 
+  /**
+   * This corner's steering breakaway voltage. Per module for the same reason driveKs is, only more
+   * so — the measured spread is nearly threefold across the four corners.
+   */
+  private final TunableNumber turnKs;
+
   public Module(ModuleIO io, String name, Constants.ModuleConfig config) {
     this.io = io;
     this.name = name;
     this.config = config;
     this.driveKs = new TunableNumber("Tuning/Drive/" + name + "/kS", config.driveKs);
     this.driveKv = new TunableNumber("Tuning/Drive/" + name + "/kV", config.driveKv);
+    this.turnKs = new TunableNumber("Tuning/Turn/" + name + "/kS", config.turnKs);
 
     // Both IO implementations already apply the compiled-in gains when they are constructed, so
     // consume the initial "changed" state here. Without this the first periodic() would re-push all
     // six gains, which on real hardware is eight blocking CAN configure() calls landing in the first
     // loop of the match.
     TunableNumber.anyChanged(hashCode(), driveKp, driveKd, driveKs, driveKv);
-    TunableNumber.anyChanged(hashCode(), turnKp, turnKd);
+    TunableNumber.anyChanged(hashCode(), turnKp, turnKd, turnKs, turnFeedforwardToleranceDeg);
   }
 
   /**
@@ -77,8 +89,13 @@ public class Module {
     if (TunableNumber.anyChanged(hashCode(), driveKp, driveKd, driveKs, driveKv)) {
       io.setDriveGains(driveKp.get(), driveKd.get(), driveKs.get(), driveKv.get());
     }
-    if (TunableNumber.anyChanged(hashCode(), turnKp, turnKd)) {
-      io.setTurnGains(turnKp.get(), turnKd.get());
+    if (TunableNumber.anyChanged(
+        hashCode(), turnKp, turnKd, turnKs, turnFeedforwardToleranceDeg)) {
+      io.setTurnGains(
+          turnKp.get(),
+          turnKd.get(),
+          turnKs.get(),
+          Math.toRadians(turnFeedforwardToleranceDeg.get()));
     }
   }
 
