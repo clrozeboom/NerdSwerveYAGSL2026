@@ -127,23 +127,26 @@ public final class Constants {
     public static final double WHEEL_RADIUS = Units.inchesToMeters(1.975) / 2.0;
 
     /**
-     * Drive reduction, from the YAGSL physicalproperties {@code drive.gearRatio}. 1.36 is a very low
-     * reduction for a swerve module — most are between 4:1 and 8:1 — and it is the last number in
-     * this block still taken on faith from that config rather than measured.
+     * Drive reduction, measured rather than declared: ten hand turns of a blocked-up wheel reported
+     * 62.369984 rad where the YAGSL physicalproperties {@code drive.gearRatio} of 1.36 predicts
+     * 62.831853, putting the true reduction at 1.350003. Almost certainly 27:20 exactly.
      *
-     * <p>It is also the prime suspect for a residual. With the wheel radius and track radius above
-     * both now measured, a spin at a reported 9.91 rad/s of wheel speed should turn the robot at
-     * 1.258 rad/s; the gyro measured 1.404, so the robot turns 11.6% faster than the drivetrain
-     * model says it should. A true reduction of 1.219 would account for all of it, and nothing
-     * else in the chain is unmeasured.
+     * <p>This is a very low reduction for a swerve module — most are between 4:1 and 8:1 — and it
+     * is real, not a config error. At 1.35 the free speed works out around 36 ft/s, which this
+     * robot will never use; what it does mean is that the module is geared for speed and has very
+     * little torque, and that driving at the 1 ft/s {@code MAX_LINEAR_SPEED} asks for roughly 0.69
+     * V out of 12. Everything about this drivetrain's behaviour at that crawl — the stiction floor
+     * {@link #DRIVE_KP} has to stay clear of above all — follows from operating a speed-geared
+     * module at 6% output. Raising the speed cap would make the whole thing easier to control.
      *
-     * <p>Do not take that 1.219 from the spin, though — it leans on the gyro's scale factor and on
-     * a manoeuvre where every wheel scrubs. The clean test needs neither: block the robot up, mark
-     * a wheel, turn it by hand exactly ten revolutions, and read {@code DrivePositionRad}. If 1.36
-     * is right it reports 10 revolutions (62.83 rad). If the reduction is really 1.219 it reports
-     * 8.96 (56.30 rad). Whatever it reports, the true reduction is 1.36 times reported over actual.
+     * <p>The correction from 1.36 also does not explain the spin residual it was meant to. With
+     * wheel radius, track radius and now this all measured, a spin at a true 9.98 rad/s of wheel
+     * speed should turn the robot at 1.268 rad/s; the gyro measured 1.404, still 10.8% fast. That
+     * leaves the drive base radius and the navX's scale factor as the only unverified terms, and
+     * one turn of the robot by hand separates them: 360 degrees of yaw means the gyro is honest
+     * and the geometry is wrong, about 399 means the gyro over-reads.
      */
-    public static final double DRIVE_GEAR_RATIO = 1.36;
+    public static final double DRIVE_GEAR_RATIO = 1.35;
 
     /** Turn reduction, from the YAGSL physicalproperties {@code angle.gearRatio}. */
     public static final double TURN_GEAR_RATIO = 19.127;
