@@ -357,24 +357,30 @@ public final class Constants {
      * forever. This band is therefore the accuracy the loop can settle to -- there is no point
      * setting it tighter than the absolute encoder can actually resolve.
      *
-     * <p>It also has a measured price, which is worth knowing before anyone changes it. A module
-     * can park anywhere inside the band and stay there, and it parks differently depending on
-     * which side it arrived from -- driving the square, the modules averaged 0.58 degrees off on
-     * the forward leg and 3.04 degrees off on the leg back. Opposing legs are therefore not quite
-     * antiparallel and the loop does not close. Summing the four legs at the headings actually
-     * measured predicts 0.45 in back and 1.28 in left of the start; the robot finished 0.5 in back
-     * and 1.125 in left. That is the whole of the 1.23 in closure over a 118 in path, so this
-     * constant, not wheel radius or track radius, is what sets odometry drift on this robot.
+     * <p>It is also what dominates how well the robot drives a closed path, which is why it sits
+     * at 0.75 rather than the 1.5 it was tuned to. A module can park anywhere inside the band and
+     * stay there, and it settles differently depending on which side it arrived from -- at 1.5 the
+     * modules averaged 0.58 degrees off driving the square's forward leg against 3.04 degrees off
+     * on the leg back, so opposing legs were not quite antiparallel. Halving the band closed that
+     * worst asymmetry to 0.36 degrees and took the square's closure from 1.23 in to 0.125 in over
+     * the same 118 in of path. Odometry's own error against the floor went from 0.68 in to 0.25 in
+     * alongside it.
      *
-     * <p>Tightening it would tighten the square and risks trading away what the band bought:
-     * parked pointing error went from 11.9 degrees to 1.07 with the feedforward in place, and the
-     * band is what stops it hunting. For a robot with no vision correction, 1 in per 10 ft of path
-     * is likely the better side of that trade. If it ever needs settling rather than assuming,
-     * halve {@code Tuning/Turn/FeedforwardToleranceDeg}, re-run the square, and see whether the
-     * closure halves with it -- then re-run the turn step response to check nothing started
-     * hunting.
+     * <p>Ten times better for half the band is a much bigger win than the mechanism above predicts,
+     * and no attempt to reconstruct the closure from the logged module headings has held up across
+     * both runs -- one such sum matched the 1.5 result and then missed the 0.75 result by an inch,
+     * and it disagrees with the odometry pose it should reproduce. So take the improvement as
+     * measured and the explanation as incomplete: the pointing asymmetry is real and moves the
+     * right way, but something else is contributing and has not been identified.
+     *
+     * <p>The band cannot shrink indefinitely. It exists because a fixed push that never switches
+     * off hunts forever, and the feedforward is what took parked pointing error from 11.9 degrees
+     * to 1.07. At 0.75 there is no sign of hunting -- module heading stays within about 1 degree
+     * rms of its own mean on a leg, the same as at 1.5 -- but that margin is now thin, and the
+     * absolute encoder's own resolution is the floor underneath it. Re-run the turn step response
+     * as well as the square before going lower.
      */
-    public static final double TURN_FEEDFORWARD_TOLERANCE_DEG = 1.5;
+    public static final double TURN_FEEDFORWARD_TOLERANCE_DEG = 0.75;
 
     /** Simulated rotational inertia. Not a YAGSL value — only used by ModuleIOSim. */
     public static final double DRIVE_SIM_MOI = 0.025;
