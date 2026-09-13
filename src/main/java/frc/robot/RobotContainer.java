@@ -118,10 +118,12 @@ public class RobotContainer {
         autoChooser.addOption("Tuning 1: Zero Modules (align wheels first)", TuningCommands.zeroModules(drive));
       }
       autoChooser.addOption("Tuning 2: Feedforward Ramp (quick)", TuningCommands.feedforwardRamp(drive));
+      autoChooser.addOption("Tuning 2: Steady-State Sweep (kS/kV)", TuningCommands.steadyStateSweep(drive));
       autoChooser.addOption("Tuning 2: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
       autoChooser.addOption("Tuning 3: Spin Step Response", TuningCommands.spinStepResponse(drive));
       autoChooser.addOption("Tuning 3: Turn Step Response", TuningCommands.turnStepResponse(drive));
       autoChooser.addOption("Tuning 4: Measure Wheel Radius", TuningCommands.measureWheelRadius(drive));
+      autoChooser.addOption("Tuning 5: Drive Square (odometry check)", TuningCommands.driveSquare(drive));
       autoChooser.addOption("Tuning (opt): Drive Step Response", TuningCommands.driveStepResponse(drive));
       autoChooser.addOption("Tuning (opt): Drive SysId (all four)", TuningCommands.driveSysIdFull(drive));
     }

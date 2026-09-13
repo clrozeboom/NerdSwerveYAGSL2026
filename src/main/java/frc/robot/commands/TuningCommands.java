@@ -8,12 +8,17 @@ import frc.robot.Constants;
 import frc.robot.subsystems.drive.Drive;
 import frc.robot.subsystems.drive.Module;
 import frc.robot.util.TunableNumber;
+import java.util.ArrayList;
+import java.util.List;
 import org.littletonrobotics.junction.Logger;
 import org.wpilib.command2.Command;
 import org.wpilib.command2.Commands;
 import org.wpilib.command2.sysid.SysIdRoutine;
 import org.wpilib.driverstation.RobotState;
+import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
+import org.wpilib.math.geometry.Translation2d;
+import org.wpilib.math.kinematics.ChassisVelocities;
 import org.wpilib.system.Timer;
 import org.wpilib.units.Units;
 
@@ -468,5 +473,348 @@ public final class TuningCommands {
         routine
             .dynamic(SysIdRoutine.Direction.kReverse)
             .withTimeout(Constants.SysId.DYNAMIC_TIMEOUT_SECS));
+  }
+  /**
+   * Holds a series of fixed voltages long enough for the speed to settle at each, for measuring
+   * drive kS and kV without an acceleration term contaminating them.
+   *
+   * <p>This exists because {@link #feedforwardRamp(Drive)} and the SysId quasistatic sweep cannot
+   * actually separate kS from kA. Both ramp voltage at a constant rate, which on a linear plant
+   * means constant acceleration for the whole run — so the kA column is collinear with the
+   * constant term, and a three-parameter fit puts the entire acceleration contribution into the
+   * intercept. That is not a subtle bias: at the ~16 rad/s^2 those runs held it is worth roughly
+   * 0.05 V, against a kS of about 0.33.
+   *
+   * <p>Holding each voltage still until the speed stops changing removes the term entirely. What
+   * is left is the steady-state line, which is what the feedforward actually needs, because the
+   * feedforward's job is holding a speed rather than reaching one.
+   *
+   * <p>Spins in place like the ramp does, so it needs no more floor than the robot itself. The
+   * defaults walk 0.15 V to 1.05 V in 0.1 V steps, 1.5 s each, which is about 15 s and tops out
+   * near 180 deg/s of rotation. Every step is logged to {@code Tuning/SteadySweep/} and the fit is
+   * printed at the end.
+   *
+   * <p>Two numbers come out and they mean different things. The fitted intercept is kS as the
+   * feedforward uses it — the voltage the line says you need at zero speed. The breakaway voltage
+   * is the lowest step that actually moved the wheel at all. Breakaway is the more physical of the
+   * two and is usually a little higher, because a wheel that is already turning takes less voltage
+   * to keep turning than a stopped one takes to start.
+   *
+   * @param drive the drivetrain
+   * @return a command that sweeps, reports, and stops itself
+   */
+  public static Command steadyStateSweep(Drive drive) {
+    TunableNumber startVolts = new TunableNumber("Tuning/SteadySweep/StartVolts", 0.15);
+    TunableNumber endVolts = new TunableNumber("Tuning/SteadySweep/EndVolts", 1.05);
+    TunableNumber stepVolts = new TunableNumber("Tuning/SteadySweep/StepVolts", 0.10);
+    TunableNumber settleSecs = new TunableNumber("Tuning/SteadySweep/SettleSecs", 0.75);
+    TunableNumber measureSecs = new TunableNumber("Tuning/SteadySweep/MeasureSecs", 0.75);
+
+    Timer timer = new Timer();
+    List<SweepStep> steps = new ArrayList<>();
+
+    return Commands.runEnd(
+            () -> {
+              double stepSecs = settleSecs.get() + measureSecs.get();
+              int index = (int) (timer.get() / stepSecs);
+              double volts = startVolts.get() + index * stepVolts.get();
+              drive.runCharacterizationSpin(volts);
+              Logger.recordOutput("Tuning/SteadySweep/Volts", volts);
+
+              while (steps.size() <= index) {
+                steps.add(new SweepStep(startVolts.get() + steps.size() * stepVolts.get()));
+              }
+              // Only the tail of each step counts: the first settleSecs is the wheel getting there.
+              if (timer.get() - index * stepSecs >= settleSecs.get()) {
+                Module[] modules = drive.getModules();
+                for (int i = 0; i < modules.length; i++) {
+                  steps.get(index).add(i, modules[i].getVelocityMetersPerSec());
+                }
+              }
+            },
+            () -> {
+              drive.stop();
+              timer.stop();
+              reportSweep(drive, steps);
+            },
+            drive)
+        .beforeStarting(
+            () -> {
+              steps.clear();
+              timer.restart();
+            })
+        .until(
+            () ->
+                startVolts.get()
+                        + (int) (timer.get() / (settleSecs.get() + measureSecs.get()))
+                            * stepVolts.get()
+                    > endVolts.get());
+  }
+
+  /** One voltage step of {@link #steadyStateSweep(Drive)}, accumulating settled speed per module. */
+  private static final class SweepStep {
+    private final double volts;
+    private final double[] sum = new double[4];
+    private final int[] count = new int[4];
+
+    private SweepStep(double volts) {
+      this.volts = volts;
+    }
+
+    private void add(int module, double speedMetersPerSec) {
+      sum[module] += Math.abs(speedMetersPerSec);
+      count[module]++;
+    }
+
+    private double speed(int module) {
+      return count[module] == 0 ? 0.0 : sum[module] / count[module];
+    }
+  }
+
+  /** Prints the sweep table and the per-module fit. */
+  private static void reportSweep(Drive drive, List<SweepStep> steps) {
+    Module[] modules = drive.getModules();
+    System.out.println("=== Steady-state sweep done ===");
+    System.out.printf("  %8s", "volts");
+    for (Module module : modules) {
+      System.out.printf("%14s", module.getName());
+    }
+    System.out.println("   (settled m/s)");
+    for (SweepStep step : steps) {
+      System.out.printf("  %8.3f", step.volts);
+      for (int i = 0; i < modules.length; i++) {
+        System.out.printf("%14.4f", step.speed(i));
+      }
+      System.out.println();
+    }
+
+    System.out.println("  Fit over the steps that moved:");
+    double ksTotal = 0.0;
+    double kvTotal = 0.0;
+    int fitted = 0;
+    for (int i = 0; i < modules.length; i++) {
+      List<Double> xs = new ArrayList<>();
+      List<Double> ys = new ArrayList<>();
+      double breakaway = Double.NaN;
+      for (SweepStep step : steps) {
+        if (step.speed(i) > MOVING_METERS_PER_SEC) {
+          if (Double.isNaN(breakaway)) {
+            breakaway = step.volts;
+          }
+          xs.add(step.speed(i) / Constants.Module.WHEEL_RADIUS);
+          ys.add(step.volts);
+        }
+      }
+      if (xs.size() < 3) {
+        System.out.printf("    %-11s too few moving steps to fit%n", modules[i].getName());
+        continue;
+      }
+      double[] fit = fitLine(xs, ys);
+      ksTotal += fit[0];
+      kvTotal += fit[1];
+      fitted++;
+      System.out.printf(
+          "    %-11s kS %.4f V, kV %.5f V/(rad/s), r2 %.5f, breakaway %.3f V%n",
+          modules[i].getName(), fit[0], fit[1], fit[2], breakaway);
+      Logger.recordOutput("Tuning/SteadySweep/" + modules[i].getName() + "/Ks", fit[0]);
+      Logger.recordOutput("Tuning/SteadySweep/" + modules[i].getName() + "/Kv", fit[1]);
+    }
+    if (fitted > 0) {
+      double ks = ksTotal / fitted;
+      double kv = kvTotal / fitted;
+      System.out.printf("  Mean: kS %.4f V, kV %.5f V/(rad/s)%n", ks, kv);
+      System.out.printf(
+          "  Set DRIVE_KS = %.4f and DRIVE_KV_PER_METER_PER_SEC = %.4f%n",
+          ks, kv / Constants.Module.WHEEL_RADIUS);
+      System.out.printf(
+          "  Currently  DRIVE_KS = %.4f, DRIVE_KV = %.5f V/(rad/s)%n",
+          Constants.Module.DRIVE_KS, Constants.Module.DRIVE_KV);
+    }
+  }
+
+  /** Below this a module counts as not having broken loose, in m/s. */
+  private static final double MOVING_METERS_PER_SEC = 0.01;
+
+  /**
+   * Least-squares fit of {@code y = intercept + slope * x}.
+   *
+   * @param xs the x values
+   * @param ys the y values, same length
+   * @return {@code {intercept, slope, rSquared}}
+   */
+  static double[] fitLine(List<Double> xs, List<Double> ys) {
+    int n = xs.size();
+    double meanX = xs.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+    double meanY = ys.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+    double sxx = 0.0;
+    double sxy = 0.0;
+    for (int i = 0; i < n; i++) {
+      sxx += (xs.get(i) - meanX) * (xs.get(i) - meanX);
+      sxy += (xs.get(i) - meanX) * (ys.get(i) - meanY);
+    }
+    double slope = sxx == 0.0 ? 0.0 : sxy / sxx;
+    double intercept = meanY - slope * meanX;
+    double residual = 0.0;
+    double total = 0.0;
+    for (int i = 0; i < n; i++) {
+      double predicted = intercept + slope * xs.get(i);
+      residual += (ys.get(i) - predicted) * (ys.get(i) - predicted);
+      total += (ys.get(i) - meanY) * (ys.get(i) - meanY);
+    }
+    return new double[] {intercept, slope, total == 0.0 ? 1.0 : 1.0 - residual / total};
+  }
+
+  /**
+   * Drives a closed square and stops where it started, for checking odometry against the floor.
+   *
+   * <p>Everything the drivetrain believes about distance and heading has been measured one term at
+   * a time: wheel radius against a tape in a straight line, gear ratio on the bench, track radius
+   * and gyro scale from a hand rotation. This is the test that exercises all of them at once, in
+   * the motion the robot actually does — translating while holding a heading, four times, around a
+   * loop that has to close.
+   *
+   * <p>Translates only; it never rotates. That is deliberate. A square driven by pivoting at each
+   * corner mixes translation error and rotation error into one number and tells you nothing about
+   * which is which. Holding one heading the whole way means a closure error is a translation
+   * error, and the heading drift reported alongside it is a separate, independent read on the gyro.
+   *
+   * <p><b>The log cannot score this test.</b> Each leg ends when odometry says it has gone far
+   * enough, so odometry closes the loop perfectly by construction and the final pose is always the
+   * start pose. The measurement is physical: mark the floor at a corner of the robot before
+   * starting, run it, and measure how far that corner ends up from its mark. That distance over the
+   * total path length is the odometry error.
+   *
+   * <p>Sized to stay inside a small space. The default 0.75 m side plus the robot's own footprint
+   * needs about 1.1 m square of clear floor, which leaves roughly a foot of margin on each side in
+   * a 5.5 ft room. The required envelope is printed when the routine starts, so check it against
+   * the room before letting it run with a larger side.
+   *
+   * @param drive the drivetrain
+   * @return a command that drives the square, reports, and stops itself
+   */
+  public static Command driveSquare(Drive drive) {
+    TunableNumber sideMeters = new TunableNumber("Tuning/Square/SideMeters", 0.75);
+    TunableNumber speedMetersPerSec = new TunableNumber("Tuning/Square/SpeedMetersPerSec", 0.25);
+
+    Pose2d[] start = new Pose2d[1];
+    int[] leg = new int[1];
+    double[] pathLength = new double[1];
+
+    return Commands.runEnd(
+            () -> {
+              Translation2d target =
+                  start[0].getTranslation().plus(squareCorner(leg[0], sideMeters.get()));
+
+              Translation2d error = target.minus(drive.getPose().getTranslation());
+              Logger.recordOutput("Tuning/Square/Leg", leg[0]);
+              Logger.recordOutput("Tuning/Square/DistanceToCorner", error.getNorm());
+
+              if (error.getNorm() < CORNER_TOLERANCE_METERS) {
+                leg[0]++;
+                if (leg[0] > SQUARE_CORNERS) {
+                  drive.stop();
+                  return;
+                }
+                pathLength[0] += sideMeters.get();
+                return;
+              }
+
+              // Full speed down the leg, easing off over the last stretch so it settles on the
+              // corner instead of overshooting it and crabbing back.
+              double speed =
+                  Math.min(speedMetersPerSec.get(), APPROACH_GAIN_PER_SEC * error.getNorm());
+              speed = Math.max(speed, MIN_APPROACH_METERS_PER_SEC);
+              Translation2d velocity = error.div(error.getNorm()).times(speed);
+
+              // Hold the starting heading. Any rotation here would smear translation error and
+              // heading error together, which is exactly what this test is built to keep apart.
+              double headingError =
+                  start[0].getRotation().minus(drive.getPose().getRotation()).getRadians();
+              double omega =
+                  // WPILib 2027 dropped MathUtil.clamp in favour of the JDK's own.
+                  Math.clamp(
+                      HEADING_GAIN_PER_SEC * headingError,
+                      -MAX_CORRECTION_RAD_PER_SEC,
+                      MAX_CORRECTION_RAD_PER_SEC);
+
+              drive.runVelocity(
+                  new ChassisVelocities(velocity.getX(), velocity.getY(), omega)
+                      .toRobotRelative(drive.getRotation()));
+            },
+            () -> {
+              drive.stop();
+              Pose2d end = drive.getPose();
+              double closure = end.getTranslation().minus(start[0].getTranslation()).getNorm();
+              double headingDrift =
+                  end.getRotation().minus(start[0].getRotation()).getDegrees();
+              System.out.println("=== Drive square done ===");
+              System.out.printf("  legs completed:     %d of %d%n", Math.min(leg[0], SQUARE_CORNERS), SQUARE_CORNERS);
+              System.out.printf("  path length:        %.3f m%n", pathLength[0]);
+              System.out.printf("  odometry closure:   %.4f m  (near zero by construction)%n", closure);
+              System.out.printf("  heading drift:      %+.2f deg%n", headingDrift);
+              System.out.println("  Now measure the robot against its floor mark. Then:");
+              System.out.printf(
+                  "    odometry error = measured_offset_m / %.3f m of path%n", pathLength[0]);
+              System.out.println("  A closure that is short in every direction points at");
+              System.out.println("  WHEEL_RADIUS; one that is skewed points at TRACK_RADIUS.");
+              Logger.recordOutput("Tuning/Square/PathLengthMeters", pathLength[0]);
+              Logger.recordOutput("Tuning/Square/HeadingDriftDeg", headingDrift);
+            },
+            drive)
+        .beforeStarting(
+            () -> {
+              start[0] = drive.getPose();
+              leg[0] = 1;
+              pathLength[0] = 0.0;
+              System.out.println("=== Drive square starting ===");
+              System.out.printf(
+                  "  %.2f m sides need about %.2f m square of clear floor, robot included.%n",
+                  sideMeters.get(), sideMeters.get() + ROBOT_ENVELOPE_METERS);
+              System.out.println("  Mark the floor at one corner of the robot first.");
+            })
+        .until(() -> leg[0] > SQUARE_CORNERS);
+  }
+
+  /** Corners of the square, in order; the fourth returns to the start. */
+  private static final int SQUARE_CORNERS = 4;
+
+
+  /** How close to a corner counts as having reached it, in metres. */
+  private static final double CORNER_TOLERANCE_METERS = 0.02;
+
+  /** Approach speed per metre of remaining distance, easing the robot onto each corner. */
+  private static final double APPROACH_GAIN_PER_SEC = 1.5;
+
+  /** Floor on the approach speed, so the last centimetres do not take forever. */
+  private static final double MIN_APPROACH_METERS_PER_SEC = 0.05;
+
+  /** Heading-hold gain, in rad/s per radian of error. */
+  private static final double HEADING_GAIN_PER_SEC = 2.0;
+
+  /** Cap on the heading-hold output, so a bad pose cannot spin the robot. */
+  private static final double MAX_CORRECTION_RAD_PER_SEC = 0.5;
+
+  /** Roughly how much floor the robot itself occupies, for the clearance note, in metres. */
+  private static final double ROBOT_ENVELOPE_METERS = 0.35;
+
+  /**
+   * Offset from the start to corner {@code index} of a square walked +x, +y, -x, -y.
+   *
+   * <p>Corner 0 is the start, and corner {@value #SQUARE_CORNERS} is the start again — the leg
+   * offsets have to sum to zero or the robot would not be asked to come home, and the test would
+   * have nothing to measure.
+   *
+   * @param index which corner, 0 through {@value #SQUARE_CORNERS}
+   * @param sideMeters length of one side
+   * @return the offset from the starting translation
+   */
+  static Translation2d squareCorner(int index, double sideMeters) {
+    return switch (index) {
+      case 1 -> new Translation2d(sideMeters, 0.0);
+      case 2 -> new Translation2d(sideMeters, sideMeters);
+      case 3 -> new Translation2d(0.0, sideMeters);
+      // 0 is where the robot started and 4 is where it has to come back to: the same place.
+      default -> Translation2d.kZero;
+    };
   }
 }
