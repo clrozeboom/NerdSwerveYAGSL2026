@@ -64,6 +64,27 @@ class TuningRoutineTest {
   }
 
   @Test
+  void theSquareTurnsCounterClockwiseStartingForward() {
+    // Forward first, then left. In WPILib's frame +x is forward and +y is left, so this is
+    // counter-clockwise seen from above -- and it puts the whole square forward and left of the
+    // start, which is what makes "park it in the corner with forward and left clear" correct.
+    Translation2d first = TuningCommands.squareCorner(1, SIDE);
+    assertEquals(SIDE, first.getX(), 1e-9, "the first leg should run straight forward");
+    assertEquals(0.0, first.getY(), 1e-9, "and not sideways at all");
+
+    Translation2d second =
+        TuningCommands.squareCorner(2, SIDE).minus(TuningCommands.squareCorner(1, SIDE));
+    assertTrue(second.getY() > 0.0, "the second leg should go left, not right");
+
+    for (int i = 0; i <= 4; i++) {
+      Translation2d corner = TuningCommands.squareCorner(i, SIDE);
+      assertTrue(
+          corner.getX() >= -1e-9 && corner.getY() >= -1e-9,
+          "nothing should sit behind or right of the start, corner " + i + " is " + corner);
+    }
+  }
+
+  @Test
   void theSquareIsSquareAndFitsTheRoom() {
     Translation2d[] corners = {
       TuningCommands.squareCorner(0, SIDE),

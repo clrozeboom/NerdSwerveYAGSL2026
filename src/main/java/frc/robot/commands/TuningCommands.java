@@ -684,6 +684,12 @@ public final class TuningCommands {
    * starting, run it, and measure how far that corner ends up from its mark. That distance over the
    * total path length is the odometry error.
    *
+   * <p>The square is walked counter-clockwise, in the robot's own frame as it sits at the start:
+   * forward, then left, then back, then right. It never rotates, so "forward" stays the direction
+   * the robot was pointing when the routine began. That means the whole square lies forward and to
+   * the left of the starting position, and nothing extends behind or to the right beyond the
+   * robot's own body -- park it in the corner of the space with forward and left clear.
+   *
    * <p>Sized to stay inside a small space. The default 0.75 m side plus the robot's own footprint
    * needs about 1.1 m square of clear floor, which leaves roughly a foot of margin on each side in
    * a 5.5 ft room. The required envelope is printed when the routine starts, so check it against
@@ -702,8 +708,17 @@ public final class TuningCommands {
 
     return Commands.runEnd(
             () -> {
+              // Corners are laid out relative to where the robot was pointing when the routine
+              // started, not along the field axes. Otherwise the shape of the square would depend
+              // on whatever the gyro happened to read, and setting the test up would mean zeroing
+              // the heading first and trusting it -- in a room this size, a heading that is off by
+              // 45 degrees sends the robot diagonally into a wall.
               Translation2d target =
-                  start[0].getTranslation().plus(squareCorner(leg[0], sideMeters.get()));
+                  start[0]
+                      .getTranslation()
+                      .plus(
+                          squareCorner(leg[0], sideMeters.get())
+                              .rotateBy(start[0].getRotation()));
 
               Translation2d error = target.minus(drive.getPose().getTranslation());
               Logger.recordOutput("Tuning/Square/Leg", leg[0]);
@@ -770,6 +785,8 @@ public final class TuningCommands {
               System.out.printf(
                   "  %.2f m sides need about %.2f m square of clear floor, robot included.%n",
                   sideMeters.get(), sideMeters.get() + ROBOT_ENVELOPE_METERS);
+              System.out.println("  Counter-clockwise from here: forward, left, back, right.");
+              System.out.println("  All of it lies forward and left of the robot, which never turns.");
               System.out.println("  Mark the floor at one corner of the robot first.");
             })
         .until(() -> leg[0] > SQUARE_CORNERS);
@@ -809,6 +826,8 @@ public final class TuningCommands {
    * @return the offset from the starting translation
    */
   static Translation2d squareCorner(int index, double sideMeters) {
+    // +x is the robot's forward and +y its left, so this walks counter-clockwise. The caller
+    // rotates these into the field frame using the heading the routine started at.
     return switch (index) {
       case 1 -> new Translation2d(sideMeters, 0.0);
       case 2 -> new Translation2d(sideMeters, sideMeters);
