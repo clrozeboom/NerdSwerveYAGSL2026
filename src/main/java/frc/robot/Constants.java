@@ -271,33 +271,42 @@ public final class Constants {
      * {@link #DRIVE_KA} below convert them into the volts-per-wheel-rad/s this project's IO layer
      * works in.
      *
-     * <p>kS re-measured on this robot, twice, after the drivetrain geometry was settled: the
-     * feedforward ramp fit 0.3501 V (r-squared 0.9994 across four modules) and the SysId
-     * quasistatic sweep, which covers both directions, fit 0.3184. 0.334 splits them. The old
-     * 0.4234 was roughly 20% high, which is most of why the drive overdrove itself on a low-
-     * friction floor: kS is there to break static friction, so an oversized one is pure overdrive
-     * when the friction is not.
+     * <p>Both measured by {@code TuningCommands.steadyStateSweep}, which holds each voltage until
+     * the speed settles and so carries no acceleration term at all. Ten steps from 0.15 V to
+     * 1.05 V fit a straight line to r-squared 0.9994 or better on every module, with kS between
+     * 0.1969 and 0.2032 and kV between 0.02592 and 0.02661 V per wheel rad/s. The spread is small
+     * enough to be scatter, so both are shared rather than held per corner.
      *
-     * <p>kV needs no change. The same two fits put it at 0.02604 and 0.02721 V per wheel rad/s,
-     * either side of the 0.02663 that {@link #DRIVE_KV_PER_METER_PER_SEC} already gives.
+     * <p>The history is worth keeping, because it is a lesson about the measurement rather than
+     * about the robot. The inherited kS was 0.4234. A voltage ramp fit 0.3501 and the SysId
+     * quasistatic sweep fit 0.3184, which put it at 0.334 -- still 67% high. Every one of those
+     * routines ramps voltage at a constant rate, which on a linear plant means constant
+     * acceleration for the whole run, which makes kS and kA collinear: a three-parameter fit
+     * returns kA near zero and leaves the entire acceleration contribution sitting in the
+     * intercept. Each successive fix cut the drive's overspeed on a low-friction floor -- 42% at
+     * 0.4234, 25% at 0.334 -- without ever reaching the cause, because the cause was that a ramp
+     * cannot measure a static quantity.
      *
-     * <p><b>This is an upper bound, not the static value.</b> Both routines ramp voltage at a
-     * constant rate, which on a linear plant means constant acceleration, which makes kS and kA
-     * collinear -- a three-parameter fit returns kA near zero and leaves the whole acceleration
-     * term sitting in the intercept. At the ~16 rad/s^2 those runs held, the inherited
-     * {@link #DRIVE_KA} puts that at about 0.05 V. Getting the true static number needs a
-     * steady-state sweep instead: hold a fixed voltage, let the speed settle, record it, repeat.
+     * <p>That difference also puts a number on kA, which nothing reads today but which matters
+     * the moment this drivetrain follows a path: 0.3501 - 0.2005 over the ~16 rad/s^2 those ramps
+     * held is about 0.0092 V per wheel rad/s^2, near 0.37 V/(m/s^2), against the 0.129 that
+     * {@link #DRIVE_KA_PER_METER_PER_SEC2} inherited. Roughly three times. Measure it properly
+     * before trusting it.
      *
      * <p>The old per-corner note is refuted. It had front-right's static friction at ~0.65 V
-     * against ~0.31-0.41 for the others; today front-right sits mid-pack at 0.3516 and 0.3274.
-     * More to the point the two runs disagree about which corner is stiffest -- front-left is
-     * highest in one and lowest in the other -- so the spread is measurement scatter, not four
-     * different drivetrains, and one shared kS is the honest model. (The turn side is the
-     * opposite case: there the per-module differences did reproduce, and it holds per-corner kS.)
+     * against ~0.31-0.41 for the others; front-right is mid-pack in all three runs since. (The
+     * turn side is the opposite case: there the per-module differences did reproduce, and it
+     * holds per-corner kS.)
+     *
+     * <p>Breakaway -- the voltage that first moves a stopped wheel -- came in at 0.25 V on all
+     * four, against a 0.15 V step that moved nothing. Note how close that is to the 0.2005
+     * intercept, and that the 0.25 V point sits exactly on the fitted line: this drivetrain has
+     * far less stiction than the inherited gains implied. The step was 0.1 V, so breakaway is
+     * only known to lie in (0.15, 0.25]; sweep more finely down there if it ever matters.
      */
-    public static final double DRIVE_KS = 0.334;
+    public static final double DRIVE_KS = 0.2005;
 
-    public static final double DRIVE_KV_PER_METER_PER_SEC = 1.0618;
+    public static final double DRIVE_KV_PER_METER_PER_SEC = 1.0529;
 
     public static final double DRIVE_KA_PER_METER_PER_SEC2 = 0.129;
 
