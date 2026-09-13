@@ -80,19 +80,28 @@ public final class Constants {
      * chassis motion through this number, so an oversized track radius makes the robot rotate
      * faster than commanded and biases every wheel-radius estimate taken from a spin.
      *
-     * <p><b>Still suspect.</b> Only the left-to-right spacing was measured, and both axes are set
-     * from it on the assumption that the drive base is square. The spin says something in the
-     * rotational chain is still 12.7% off (+/- 0.4% over 11 bursts): the robot turns that much
-     * faster than the wheel travel and this geometry predict. Slip cannot cause that -- no-slip is
-     * the upper bound on how fast the wheels can turn the robot -- and the straight-line test
-     * above rules out the wheel radius and gear ratio, which leaves this number and the navX's
-     * scale factor. If the base is really a rectangle rather than a square, a front-to-back
-     * spacing near 8.3 in would account for all of it; measure it before trusting the symmetry
-     * assumed here.
+     * <p>The tape says 5.5 (11 in between the tread centres, square on both axes). The robot says
+     * 5.256, and that is the number used here. Rotating the robot through one full turn by hand,
+     * with the modules parked tangentially so the wheels rolled freely, a rigid-body fit of the
+     * four module displacements came back at 344.05 degrees where the truth was 360 -- the wheels
+     * under-report rotation by 4.6%. Since rotation goes as distance over radius, under-reporting
+     * means this radius is too big, and the straight-line test on {@link Module#WHEEL_RADIUS}
+     * rules out the other two terms in that chain.
+     *
+     * <p>That fit is the best data in the drivetrain: per-module residuals of 0.001 to 0.05 in
+     * across 45-49 in of roll, with no drive torque and so no slip. It survives uncertainty in how
+     * exactly the turn was closed -- five degrees either way moves this to 5.19 or 5.33, never
+     * back to 5.5.
+     *
+     * <p>Half an inch is still a lot to disagree with a tape about, and the discrepancy has no
+     * mechanism yet. Worth measuring where the wheels actually touch the floor rather than where
+     * the treads sit, and worth re-checking whether the wheels are offset from their steering
+     * axes. Until then the measured-in-motion number wins, because it is the one the kinematics
+     * actually has to be right about.
      */
-    public static final double TRACK_RADIUS_X = Units.inchesToMeters(5.5);
+    public static final double TRACK_RADIUS_X = Units.inchesToMeters(5.256);
 
-    public static final double TRACK_RADIUS_Y = Units.inchesToMeters(5.5);
+    public static final double TRACK_RADIUS_Y = Units.inchesToMeters(5.256);
 
     /**
      * Module translations in the WPILib convention (+x forward, +y left), ordered front-left,
