@@ -271,12 +271,31 @@ public final class Constants {
      * {@link #DRIVE_KA} below convert them into the volts-per-wheel-rad/s this project's IO layer
      * works in.
      *
-     * <p>The previous Constants.java noted that front-right's static friction measured noticeably
-     * higher than the other three (~0.65 V against ~0.31-0.41 V) and was worth a physical look.
-     * That note still stands, and unlike YAGSL this project could hold per-module gains if you
-     * decide to chase it.
+     * <p>kS re-measured on this robot, twice, after the drivetrain geometry was settled: the
+     * feedforward ramp fit 0.3501 V (r-squared 0.9994 across four modules) and the SysId
+     * quasistatic sweep, which covers both directions, fit 0.3184. 0.334 splits them. The old
+     * 0.4234 was roughly 20% high, which is most of why the drive overdrove itself on a low-
+     * friction floor: kS is there to break static friction, so an oversized one is pure overdrive
+     * when the friction is not.
+     *
+     * <p>kV needs no change. The same two fits put it at 0.02604 and 0.02721 V per wheel rad/s,
+     * either side of the 0.02663 that {@link #DRIVE_KV_PER_METER_PER_SEC} already gives.
+     *
+     * <p><b>This is an upper bound, not the static value.</b> Both routines ramp voltage at a
+     * constant rate, which on a linear plant means constant acceleration, which makes kS and kA
+     * collinear -- a three-parameter fit returns kA near zero and leaves the whole acceleration
+     * term sitting in the intercept. At the ~16 rad/s^2 those runs held, the inherited
+     * {@link #DRIVE_KA} puts that at about 0.05 V. Getting the true static number needs a
+     * steady-state sweep instead: hold a fixed voltage, let the speed settle, record it, repeat.
+     *
+     * <p>The old per-corner note is refuted. It had front-right's static friction at ~0.65 V
+     * against ~0.31-0.41 for the others; today front-right sits mid-pack at 0.3516 and 0.3274.
+     * More to the point the two runs disagree about which corner is stiffest -- front-left is
+     * highest in one and lowest in the other -- so the spread is measurement scatter, not four
+     * different drivetrains, and one shared kS is the honest model. (The turn side is the
+     * opposite case: there the per-module differences did reproduce, and it holds per-corner kS.)
      */
-    public static final double DRIVE_KS = 0.4234;
+    public static final double DRIVE_KS = 0.334;
 
     public static final double DRIVE_KV_PER_METER_PER_SEC = 1.0618;
 
