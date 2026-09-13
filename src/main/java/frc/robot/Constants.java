@@ -356,6 +356,23 @@ public final class Constants {
      * that never switches off would drive straight past the setpoint, get pushed back, and hunt
      * forever. This band is therefore the accuracy the loop can settle to -- there is no point
      * setting it tighter than the absolute encoder can actually resolve.
+     *
+     * <p>It also has a measured price, which is worth knowing before anyone changes it. A module
+     * can park anywhere inside the band and stay there, and it parks differently depending on
+     * which side it arrived from -- driving the square, the modules averaged 0.58 degrees off on
+     * the forward leg and 3.04 degrees off on the leg back. Opposing legs are therefore not quite
+     * antiparallel and the loop does not close. Summing the four legs at the headings actually
+     * measured predicts 0.45 in back and 1.28 in left of the start; the robot finished 0.5 in back
+     * and 1.125 in left. That is the whole of the 1.23 in closure over a 118 in path, so this
+     * constant, not wheel radius or track radius, is what sets odometry drift on this robot.
+     *
+     * <p>Tightening it would tighten the square and risks trading away what the band bought:
+     * parked pointing error went from 11.9 degrees to 1.07 with the feedforward in place, and the
+     * band is what stops it hunting. For a robot with no vision correction, 1 in per 10 ft of path
+     * is likely the better side of that trade. If it ever needs settling rather than assuming,
+     * halve {@code Tuning/Turn/FeedforwardToleranceDeg}, re-run the square, and see whether the
+     * closure halves with it -- then re-run the turn step response to check nothing started
+     * hunting.
      */
     public static final double TURN_FEEDFORWARD_TOLERANCE_DEG = 1.5;
 
