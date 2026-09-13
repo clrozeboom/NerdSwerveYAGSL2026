@@ -2,7 +2,7 @@ package frc.robot.subsystems.drive.riobridge.diagnostics;
 
 import frc.robot.subsystems.drive.riobridge.RioBridgeCan;
 import org.wpilib.framework.TimedRobot;
-import org.wpilib.hardware.hal.CANBusMap;
+import org.wpilib.hardware.bus.CANPort;
 import org.wpilib.system.Timer;
 
 /**
@@ -32,8 +32,8 @@ import org.wpilib.system.Timer;
  * initializer either.
  */
 public class DiagnosticsRobot extends TimedRobot {
-  private static final int RIOBRIDGE_BUS = CANBusMap.CAN_S1;
-  private static final int DRIVETRAIN_BUS = CANBusMap.CAN_S0;
+  private static final CANPort RIOBRIDGE_BUS = CANPort.CAN_S1;
+  private static final CANPort DRIVETRAIN_BUS = CANPort.CAN_S0;
   private static final double PRINT_INTERVAL_SECONDS = 1.0;
   private static final double TIMESTAMP_CHECK_TIMEOUT_SECONDS = 10.0;
 
@@ -47,7 +47,7 @@ public class DiagnosticsRobot extends TimedRobot {
   public DiagnosticsRobot() {
     System.out.println("=== TimestampUnitsCheck: collecting Status frames on CAN_S1 ===");
     TimestampUnitsCheck.Result result =
-        TimestampUnitsCheck.run(RIOBRIDGE_BUS, TIMESTAMP_CHECK_TIMEOUT_SECONDS);
+        TimestampUnitsCheck.run(RIOBRIDGE_BUS.value, TIMESTAMP_CHECK_TIMEOUT_SECONDS);
     System.out.printf(
         "  wall-clock elapsed=%.3fs, raw timestamp delta=%d, secondsPerUnit=%g%n",
         result.wallClockDeltaSeconds(), result.rawTimestampDelta(), result.secondsPerUnit());
@@ -64,8 +64,8 @@ public class DiagnosticsRobot extends TimedRobot {
 
     rioBridgeCan = new RioBridgeCan(RIOBRIDGE_BUS);
 
-    previousDrivetrainReading = sampleSafely(DRIVETRAIN_BUS, "CAN_S0");
-    previousRioBridgeReading = sampleSafely(RIOBRIDGE_BUS, "CAN_S1");
+    previousDrivetrainReading = sampleSafely(DRIVETRAIN_BUS.value, "CAN_S0");
+    previousRioBridgeReading = sampleSafely(RIOBRIDGE_BUS.value, "CAN_S1");
   }
 
   @Override
@@ -85,8 +85,8 @@ public class DiagnosticsRobot extends TimedRobot {
     }
     nextPrintAt = now + PRINT_INTERVAL_SECONDS;
 
-    BusHealthMonitor.BusReading drivetrain = sampleSafely(DRIVETRAIN_BUS, "CAN_S0");
-    BusHealthMonitor.BusReading rioBridge = sampleSafely(RIOBRIDGE_BUS, "CAN_S1");
+    BusHealthMonitor.BusReading drivetrain = sampleSafely(DRIVETRAIN_BUS.value, "CAN_S0");
+    BusHealthMonitor.BusReading rioBridge = sampleSafely(RIOBRIDGE_BUS.value, "CAN_S1");
 
     printReading(drivetrain, previousDrivetrainReading);
     printReading(rioBridge, previousRioBridgeReading);

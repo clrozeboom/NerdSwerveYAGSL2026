@@ -38,6 +38,28 @@ class GainUnitsTest {
   }
 
   @Test
+  void driveGainsAreAlsoConvertedFromWheelRadiansToMotorRpm() {
+    // REVLib alpha-7 dropped the SPARK's on-device conversion factors, so its velocity loop sees
+    // error in motor RPM where it used to see wheel rad/s. That is a second conversion on top of
+    // the volts-to-duty one, in the opposite direction, and it is exactly as invisible: the loop
+    // runs either way, it is just wrong by the gear ratio and a factor of 60.
+    double gain = Constants.Module.DRIVE_KP;
+    double sparkUnits = ModuleIOSpark.driveGainToSparkUnits(gain);
+
+    // One motor RPM of error is DRIVE_VELOCITY_FACTOR wheel rad/s, and the gain has to produce the
+    // same duty cycle for it either way round.
+    assertEquals(
+        ModuleIOSpark.voltsPerErrorToDuty(gain) * ModuleIOSpark.DRIVE_VELOCITY_FACTOR,
+        sparkUnits,
+        1e-15,
+        "the RPM gain should be the duty-cycle gain scaled by wheel rad/s per motor RPM");
+
+    assertTrue(
+        sparkUnits < ModuleIOSpark.voltsPerErrorToDuty(gain),
+        "motor RPM is a smaller unit of error than wheel rad/s, so the gain must come down, not up");
+  }
+
+  @Test
   void theConfiguredDriveGainDoesNotSaturateTheController() {
     // The worst error the velocity loop can see is a full-speed reversal: commanded one way while
     // travelling the other. Even then the proportional term alone should not peg the output, or

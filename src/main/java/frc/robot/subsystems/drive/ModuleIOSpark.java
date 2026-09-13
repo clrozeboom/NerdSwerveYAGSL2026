@@ -59,7 +59,7 @@ public class ModuleIOSpark implements ModuleIO {
       (2 * Math.PI) / Constants.Module.DRIVE_GEAR_RATIO;
 
   /** Wheel radians per second per motor RPM. */
-  private static final double DRIVE_VELOCITY_FACTOR = DRIVE_POSITION_FACTOR / 60.0;
+  static final double DRIVE_VELOCITY_FACTOR = DRIVE_POSITION_FACTOR / 60.0;
 
   /** Module radians per motor rotation. */
   private static final double TURN_POSITION_FACTOR =
@@ -132,6 +132,23 @@ public class ModuleIOSpark implements ModuleIO {
    * (the four-argument {@code setSetpoint} defaults to {@code ArbFFUnits.kVoltage}), which is why
    * {@link #setDriveVelocity(double)} passes it through untouched.
    */
+  /**
+   * A drive gain stated in volts per wheel rad/s, in the units the SPARK's velocity loop now works
+   * in: duty cycle per RPM of motor error.
+   *
+   * <p>Two conversions, and dropping either leaves a loop that runs but is wrong by a large factor.
+   * {@link #voltsPerErrorToDuty} handles the output side, as it always has. The input side is new
+   * in REVLib alpha-7: the controller used to see error in wheel rad/s because the SPARK did the
+   * conversion on-device, and now it sees motor RPM, which for this drivetrain is 12.9 times larger
+   * for the same physical error. A gain carried across unchanged would be that much too hot.
+   *
+   * @param voltsPerWheelRadPerSec the gain as {@link Constants.Module} states it
+   * @return the same gain as duty cycle per motor RPM
+   */
+  static double driveGainToSparkUnits(double voltsPerWheelRadPerSec) {
+    return voltsPerErrorToDuty(voltsPerWheelRadPerSec) * DRIVE_VELOCITY_FACTOR;
+  }
+
   static double voltsPerErrorToDuty(double gain) {
     return gain / Constants.Module.NOMINAL_VOLTAGE;
   }
@@ -168,12 +185,14 @@ public class ModuleIOSpark implements ModuleIO {
         // in, so the closed-loop rate is what keeps the SPARK from slamming its output across the
         // static-friction voltage and back every few ticks. See DRIVE_CLOSED_LOOP_RAMP_RATE.
         .closedLoopRampRate(Constants.Module.DRIVE_CLOSED_LOOP_RAMP_RATE);
-    driveConfig.encoder.positionConversionFactor(DRIVE_POSITION_FACTOR);
-    driveConfig.encoder.velocityConversionFactor(DRIVE_VELOCITY_FACTOR);
+    // REVLib alpha-7 dropped positionConversionFactor/velocityConversionFactor, so the SPARK no
+    // longer knows anything about wheels: it reports motor rotations and RPM, and its velocity
+    // loop closes on RPM. Everything this class exposes is still in wheel radians -- the
+    // conversion just moved in here, through the two helpers below.
     driveConfig.closedLoop.pid(
-        voltsPerErrorToDuty(Constants.Module.DRIVE_KP),
+        driveGainToSparkUnits(Constants.Module.DRIVE_KP),
         0.0,
-        voltsPerErrorToDuty(Constants.Module.DRIVE_KD));
+        driveGainToSparkUnits(Constants.Module.DRIVE_KD));
     driveSpark.configure(driveConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     SparkMaxConfig turnConfig = new SparkMaxConfig();
@@ -182,8 +201,6 @@ public class ModuleIOSpark implements ModuleIO {
         .smartCurrentLimit(Constants.Module.TURN_CURRENT_LIMIT)
         .voltageCompensation(Constants.Module.NOMINAL_VOLTAGE)
         .openLoopRampRate(Constants.Module.TURN_RAMP_RATE);
-    turnConfig.encoder.positionConversionFactor(TURN_POSITION_FACTOR);
-    turnConfig.encoder.velocityConversionFactor(TURN_VELOCITY_FACTOR);
     // No closed-loop config for the turn SPARK any more: the position loop lives here now, on the
     // absolute encoder, and this controller is driven open-loop with the voltage it asks for. The
     // motor encoder is still configured because it is worth logging for backlash.
@@ -196,7 +213,8 @@ public class ModuleIOSpark implements ModuleIO {
       awaitFirstEncodersFrame();
     }
     turnEncoder.setPosition(
-        Constants.Module.HAS_ABSOLUTE_ENCODERS ? readAbsolutePosition().getRadians() : 0.0);
+        (Constants.Module.HAS_ABSOLUTE_ENCODERS ? readAbsolutePosition().getRadians() : 0.0)
+            / TURN_POSITION_FACTOR);
     driveEncoder.setPosition(0.0);
   }
 
@@ -293,7 +311,7 @@ public class ModuleIOSpark implements ModuleIO {
     if (encoders == null) {
       // No RioBridge, or it hasn't sent an Encoders frame yet (e.g. still booting): the relative
       // encoder, zeroed at alignment, is the only heading there is.
-      return new Rotation2d(turnEncoder.getPosition().get(0.0));
+      return new Rotation2d(turnEncoder.getPosition().get(0.0) * TURN_POSITION_FACTOR);
     }
     double radians = adcCountToTurnFraction(encoders.rawCounts()[encoderChannel]) * 2 * Math.PI;
     return new Rotation2d(MathUtil.angleModulus(radians)).minus(absoluteEncoderOffset);
@@ -311,8 +329,8 @@ public class ModuleIOSpark implements ModuleIO {
 
   @Override
   public void updateInputs(ModuleIOInputs inputs) {
-    Signal<Double> drivePosition = driveEncoder.getPosition();
-    Signal<Double> driveVelocity = driveEncoder.getVelocity();
+    Signal<Double> drivePosition = driveEncoder.getPosition().map(r -> r * DRIVE_POSITION_FACTOR);
+    Signal<Double> driveVelocity = driveEncoder.getVelocity().map(r -> r * DRIVE_VELOCITY_FACTOR);
     Signal<Double> driveOutput = driveSpark.getAppliedOutput();
     Signal<Double> driveBusVolts = driveSpark.getBusVoltage();
 
@@ -322,8 +340,8 @@ public class ModuleIOSpark implements ModuleIO {
     inputs.driveAppliedVolts = driveOutput.get(0.0) * driveBusVolts.get(0.0);
     inputs.driveCurrentAmps = driveSpark.getOutputCurrent().get(0.0);
 
-    Signal<Double> turnPosition = turnEncoder.getPosition();
-    Signal<Double> turnVelocity = turnEncoder.getVelocity();
+    Signal<Double> turnPosition = turnEncoder.getPosition().map(r -> r * TURN_POSITION_FACTOR);
+    Signal<Double> turnVelocity = turnEncoder.getVelocity().map(r -> r * TURN_VELOCITY_FACTOR);
     Signal<Double> turnOutput = turnSpark.getAppliedOutput();
     Signal<Double> turnBusVolts = turnSpark.getBusVoltage();
 
@@ -365,7 +383,10 @@ public class ModuleIOSpark implements ModuleIO {
   public void setDriveVelocity(double velocityRadPerSec) {
     double feedforwardVolts = driveKs * Math.signum(velocityRadPerSec) + driveKv * velocityRadPerSec;
     driveController.setSetpoint(
-        velocityRadPerSec, ControlType.kVelocity, ClosedLoopSlot.kSlot0, feedforwardVolts);
+        velocityRadPerSec / DRIVE_VELOCITY_FACTOR,
+        ControlType.kVelocity,
+        ClosedLoopSlot.kSlot0,
+        feedforwardVolts);
   }
 
   @Override
@@ -381,7 +402,7 @@ public class ModuleIOSpark implements ModuleIO {
     driveKs = kS;
     driveKv = kV;
     SparkMaxConfig config = new SparkMaxConfig();
-    config.closedLoop.pid(voltsPerErrorToDuty(kP), 0.0, voltsPerErrorToDuty(kD));
+    config.closedLoop.pid(driveGainToSparkUnits(kP), 0.0, driveGainToSparkUnits(kD));
     // kNoPersistParameters so a tuning session does not burn every edit to flash; once the numbers
     // are settled they belong in Constants, not in the controller's memory.
     driveSpark.configure(config, ResetMode.kNoResetSafeParameters, PersistMode.kNoPersistParameters);

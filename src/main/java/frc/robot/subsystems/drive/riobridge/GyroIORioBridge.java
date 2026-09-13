@@ -67,8 +67,8 @@ public class GyroIORioBridge implements GyroIO {
   static final double YAW_SCALE = 396.31 / 360.0;
 
   private final RioBridgeCan bus;
-  private Rotation2d lastRawYaw = Rotation2d.kZero;
-  private Rotation2d yawOffset = Rotation2d.kZero;
+  private Rotation2d lastRawYaw = Rotation2d.ZERO;
+  private Rotation2d yawOffset = Rotation2d.ZERO;
 
   /** The navX's wrapped yaw from the previous frame, in degrees; NaN until the first frame. */
   private double previousRawYawDeg = Double.NaN;

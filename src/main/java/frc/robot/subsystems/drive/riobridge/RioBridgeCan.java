@@ -6,6 +6,7 @@ import frc.robot.protocol.CanFrames.StatusFrame;
 import frc.robot.protocol.CanIds;
 import java.util.Arrays;
 import org.wpilib.hardware.bus.CAN;
+import org.wpilib.hardware.bus.CANPort;
 import org.wpilib.hardware.hal.can.CANReceiveMessage;
 
 /**
@@ -66,11 +67,11 @@ public class RioBridgeCan implements AutoCloseable {
   private String lastMalformedFrameDescription;
 
   /**
-   * @param bus a raw HAL bus id, e.g. {@code org.wpilib.hardware.hal.CANBusMap.CAN_S1} -- not a
+   * @param bus the CAN port the RioBridge is wired to, e.g. {@code CANPort.CAN_S1} -- not a
    *     {@code CANPort}, which doesn't exist at this project's alpha-6 WPILib pin (see the
    *     previous version of this class's javadoc for why that's fine).
    */
-  public RioBridgeCan(int bus) {
+  public RioBridgeCan(CANPort bus) {
     can = new CAN(bus, CanIds.DEVICE_NUMBER, CAN.TEAM_MANUFACTURER, CAN.TEAM_DEVICE_TYPE);
   }
 

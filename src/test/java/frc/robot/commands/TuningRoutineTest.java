@@ -54,11 +54,11 @@ class TuningRoutineTest {
     // The whole point of the routine is that the robot is asked to come back to where it started.
     // If the offsets did not sum to zero there would be nothing to measure against the floor.
     assertEquals(
-        Translation2d.kZero,
+        Translation2d.ZERO,
         TuningCommands.squareCorner(0, SIDE),
         "the robot starts at the origin of its own square");
     assertEquals(
-        Translation2d.kZero,
+        Translation2d.ZERO,
         TuningCommands.squareCorner(4, SIDE),
         "and the last corner has to be the first one again");
   }

@@ -47,7 +47,7 @@ public interface ModuleIO {
     public boolean turnEncoderConnected = false;
 
     /** Absolute module heading, already offset-corrected. */
-    public Rotation2d turnAbsolutePosition = Rotation2d.kZero;
+    public Rotation2d turnAbsolutePosition = Rotation2d.ZERO;
 
     /**
      * The module heading control works from.
@@ -57,14 +57,14 @@ public interface ModuleIO {
      * 7-10 degrees on this robot — and it is the module that has to end up pointing the right way,
      * not the motor.
      */
-    public Rotation2d turnPosition = Rotation2d.kZero;
+    public Rotation2d turnPosition = Rotation2d.ZERO;
 
     /**
      * Where the turn motor's own encoder thinks the module is, kept only so the backlash stays
      * visible. Subtract this from {@link #turnPosition} to see the current lash; a growing gap
      * while the motor pushes and the module does not move is the signature.
      */
-    public Rotation2d turnMotorPosition = Rotation2d.kZero;
+    public Rotation2d turnMotorPosition = Rotation2d.ZERO;
 
     /** Turn speed, in radians per second of module rotation. */
     public double turnVelocityRadPerSec = 0.0;

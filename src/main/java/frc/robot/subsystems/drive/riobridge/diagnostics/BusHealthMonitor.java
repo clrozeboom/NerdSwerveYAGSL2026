@@ -9,9 +9,9 @@ import org.wpilib.hardware.hal.can.CANStatus;
  * master.
  *
  * <p>Wraps {@code CANJNI.getCANStatus} -- exactly the counters the README names. Takes a raw HAL
- * bus id ({@code int}) plus a display name rather than {@code CANPort}, which doesn't exist at
- * this project's alpha-6 WPILib pin -- see {@code RioBridgeCan}'s javadoc.
- * {@link DiagnosticsRobot} is a ready driver for this.
+ * bus id ({@code int}) plus a display name rather than a {@code CANPort}, because the JNI it wraps
+ * still speaks ints even in alpha-7, where the rest of the API moved to the enum. Callers holding
+ * a {@code CANPort} pass its {@code value}. {@link DiagnosticsRobot} is a ready driver for this.
  */
 public final class BusHealthMonitor {
   private BusHealthMonitor() {}

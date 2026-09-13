@@ -4,7 +4,7 @@
 
 package frc.robot;
 
-import org.wpilib.hardware.hal.CANBusMap;
+import org.wpilib.hardware.bus.CANPort;
 import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.math.util.Units;
 
@@ -229,7 +229,7 @@ public final class Constants {
      * alongside the device id; 0 is the onboard bus. The YAGSL config left {@code canbus} null,
      * meaning the roboRIO's single bus, which maps to 0 here.
      */
-    public static final int CAN_BUS_ID = 0;
+    public static final CANPort CAN_BUS_ID = CANPort.CAN_S0;
 
     /**
      * Drive velocity gain, in <b>volts per wheel radian per second</b> of error.
@@ -489,6 +489,6 @@ public final class Constants {
      * int}), not {@code CANPort} -- see {@code RioBridgeCan}'s javadoc for why, on this project's
      * alpha-6 WPILib pin.
      */
-    public static final int BUS_ID = CANBusMap.CAN_S1;
+    public static final CANPort BUS_ID = CANPort.CAN_S1;
   }
 }

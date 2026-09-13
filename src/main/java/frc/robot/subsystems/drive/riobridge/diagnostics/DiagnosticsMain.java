@@ -14,6 +14,6 @@ public final class DiagnosticsMain {
   private DiagnosticsMain() {}
 
   public static void main(String[] args) {
-    RobotBase.startRobot(DiagnosticsRobot.class);
+    RobotBase.startRobot(DiagnosticsRobot::new);
   }
 }

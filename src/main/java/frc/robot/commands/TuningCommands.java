@@ -460,18 +460,18 @@ public final class TuningCommands {
                     longest);
               }
             }),
-        routine.quasistatic(SysIdRoutine.Direction.kForward),
+        routine.quasistatic(SysIdRoutine.Direction.FORWARD),
         Commands.waitSeconds(1.0),
-        routine.quasistatic(SysIdRoutine.Direction.kReverse),
+        routine.quasistatic(SysIdRoutine.Direction.REVERSE),
         Commands.waitSeconds(1.0),
         // The Config timeout applies to both test types, so cap the dynamic runs separately —
         // they reach full speed immediately and would otherwise cover far more ground.
         routine
-            .dynamic(SysIdRoutine.Direction.kForward)
+            .dynamic(SysIdRoutine.Direction.FORWARD)
             .withTimeout(Constants.SysId.DYNAMIC_TIMEOUT_SECS),
         Commands.waitSeconds(1.0),
         routine
-            .dynamic(SysIdRoutine.Direction.kReverse)
+            .dynamic(SysIdRoutine.Direction.REVERSE)
             .withTimeout(Constants.SysId.DYNAMIC_TIMEOUT_SECS));
   }
   /**
@@ -858,7 +858,7 @@ public final class TuningCommands {
       case 2 -> new Translation2d(sideMeters, sideMeters);
       case 3 -> new Translation2d(0.0, sideMeters);
       // 0 is where the robot started and 4 is where it has to come back to: the same place.
-      default -> Translation2d.kZero;
+      default -> Translation2d.ZERO;
     };
   }
 }

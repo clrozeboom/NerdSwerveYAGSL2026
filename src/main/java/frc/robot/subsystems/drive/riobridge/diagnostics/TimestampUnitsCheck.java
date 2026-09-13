@@ -42,7 +42,7 @@ public final class TimestampUnitsCheck {
   }
 
   /**
-   * @param bus a raw HAL bus id (e.g. {@code org.wpilib.hardware.hal.CANBusMap.CAN_S1}) -- see
+   * @param bus a raw HAL bus id (e.g. {@code CANPort.CAN_S1.value}) -- see
    *     {@code RioBridgeCan}'s javadoc for why this takes an {@code int} rather than a {@code
    *     CANPort} on this project's alpha-6 WPILib pin.
    * @param timeoutSeconds give up and return a FAILED result after this long even if fewer than

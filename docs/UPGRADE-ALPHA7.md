@@ -1,25 +1,31 @@
 # Upgrading to WPILib 2027.0.0-alpha-7
 
-Status as of 2026-09-02: **not feasible — blocked on REVLib's native library.**
+Status: **done, 2026-09-13**, on `claude/riobridge-alpha7` — the calibrated drivetrain carried onto
+alpha-7.
 
-AdvantageKit 27.0.0-alpha-5 cleared the Java-level blocker, and the source migration was carried
-out on `claude/swerve-2027-alpha7` — it builds, tests and replays cleanly. It cannot run on
-hardware. REVLib 2027.0.0-alpha-6's `libREVLibWpi.so` needs two symbols alpha-7 removed:
+Two rounds. The first, on 2026-09-02, moved the code to alpha-7 once AdvantageKit 27.0.0-alpha-5
+shipped clean, and then stopped: REVLib's native driver at the time linked against symbols alpha-7's
+`libwpiutil.so` no longer exported, so constructing a `SparkMax` killed the JVM. Java-level
+compatibility and native ABI compatibility are separate gates and that branch passed only the first.
 
-| Symbol | alpha-6 | alpha-7 |
-| --- | --- | --- |
-| `fmt::v12::vformat[abi:cxx11](...)` | exported (138 `fmt::` symbols in `libwpiutil.so`) | **gone — zero exported** |
-| `wpi::util::WaitForObject(unsigned int)` | exported | **gone** — C-ABI `WPI_WaitForObject` only |
+REVLib 2027.0.0-alpha-7 closed the second. `ldd -r` against the alpha-7 native set now resolves every
+symbol `libREVLibWpi.so` asks for, and the robot program starts headless and runs clean.
 
-The JVM binds lazily, so `System.load` succeeds and the build is green; the process dies with a
-`symbol lookup error` on the first `SparkMax`, which robot code cannot catch. Verified both ways:
-the same construction plus `configure()` works on alpha-6 and kills the JVM on alpha-7. There is no
-newer REVLib to move to — 2027.0.0-alpha-6 is the only 2027 build, last published 2026-07-28.
+It brought two API changes of its own that the earlier round never saw, both in REVLib and its HAL
+surface rather than in WPILib:
 
-**This branch (alpha-6) stays the deployable one** until REV ships a rebuild.
+- `CANBusMap`'s int constants became the `org.wpilib.hardware.bus.CANPort` enum, and `SparkMax` and
+  `CAN` take the enum directly. The underlying values are unchanged — `CAN_S0` is still 0, `CAN_S1`
+  still 1 — which is worth having checked rather than assumed, because a silent renumbering would
+  have moved the RioBridge onto a different physical bus with everything still compiling.
+- REVLib dropped `positionConversionFactor`/`velocityConversionFactor` from `EncoderConfig`
+  entirely, with no replacement. The SPARK no longer knows anything about wheels: it reports motor
+  rotations and RPM and closes its velocity loop on RPM. See below.
 
-The class-level check below said GO, and was not wrong about classes — it just was not the whole
-question. `tools/check-alpha7-readiness.sh` now checks native symbols too and reports BLOCKED.
+This document is also kept as the record of what the first round involved. The parts that turned out
+to be wrong or incomplete when actually executed are marked below — the plan predicted six files and
+three API changes; the real surface was thirteen files and eight, and the largest single change (the
+build moving off the shadow jar) was not in the plan at all.
 
 Release: <https://github.com/wpilibsuite/allwpilib/releases/tag/v2027.0.0-alpha-7>
 
@@ -92,7 +98,43 @@ tuning entries follow it.
 
 ---
 
-## Plan, in order
+## What it actually took
+
+Executed on `claude/swerve-2027-alpha7`, branched from `claude/swerve-2027-advantagekit`.
+
+Three changes the plan did not predict, all found by compiling rather than by reading release notes:
+
+| Change | Why it was missed |
+| --- | --- |
+| `RobotBase.startRobot(Robot.class)` → `startRobot(Robot::new)` | alpha-6 had changed this *to* a class; alpha-7 changed it back to a supplier |
+| `SysIdRoutine.Direction.kForward`/`kReverse` → `.FORWARD`/`.REVERSE` | the k-prefix rename applied to enums beyond geometry |
+| `CommandGamepad.eastFace()` → `faceRight()` | compass-point button names became orientation names |
+
+And one structural change larger than everything else combined:
+
+**alpha-7's project template drops the shadow fat jar for the `application` plugin.** `build.gradle`
+was rebuilt from the alpha-7 template rather than edited, which is the only reason this was caught —
+`debugJni` also moved back inside the artifact block and `wpi.java.debugJni` became
+`wpi.java.runSimWithDebugJni`. Diffing against the template is what the plan said to do, and it paid
+for itself here.
+
+Two plan entries were wrong:
+
+- **`Field2d` is not deleted.** It survives in `org.wpilib.smartdashboard` along with the
+  `Mechanism2d` family; only the `Sendable` plumbing it published through went away. It implements
+  `TelemetryLoggable`, so `Telemetry.log("Field", field)` replaces `SmartDashboard.putData`.
+- **The chooser went to AdvantageKit, not `Tunables.publish`.** `LoggedNetworkChooser` wraps a
+  `Selectable` but also logs the selection and replays it, which is the better fit here.
+
+Verified: `./gradlew build` green with all six unit tests passing, clean headless sim startup with
+no loop overruns, and an AdvantageKit replay round-trip producing 39 recomputed output keys.
+
+Not verified: hardware. Also note the upgrade **costs** PathPlannerLib and PhotonLib — both are
+blocked on alpha-7 as of today, so they cannot be added until their vendors catch up.
+
+---
+
+## Plan, in order (as written beforehand)
 
 1. ~~**Wait for AdvantageKit.**~~ Done — 27.0.0-alpha-5, 2026-09-02. Bump `akitVersion` in
    `build.gradle` from `27.0.0-alpha-4`; the `akit-autolog` annotation processor moves with it.
@@ -153,3 +195,42 @@ than its maven artifact (`2027.0.0-alpha6` vs `2027.0.0-alpha-6`), so the URL ca
 reconstructed from the listing when it is not. When the fetch fails the check falls back to the copy
 in the Gradle cache and labels it as such; with neither, it reports REVLib as unverified rather than
 guessing.
+
+
+---
+
+## Round two: REVLib 2027.0.0-alpha-7
+
+### The conversion factors moved into the robot code
+
+`EncoderConfig.positionConversionFactor` and `velocityConversionFactor` are gone. Everything this
+project exposes is still in wheel radians — `ModuleIOSpark` now does the conversion itself, through
+`Signal.map` on the way in and explicit division on the way out.
+
+The part that does not announce itself is the closed loop. The SPARK's velocity controller used to
+see error in wheel rad/s because the conversion happened on-device; it now sees motor RPM, which for
+this drivetrain is 12.9 times larger for the same physical error. A gain carried across unchanged
+compiles, runs, and is 12.9x too hot. `driveGainToSparkUnits` handles it and `GainUnitsTest` guards
+it, alongside the volts-to-duty conversion that bit this project the same way once already.
+
+Every setpoint and reading that crosses that boundary:
+
+| where | alpha-6 units | alpha-7 units |
+| --- | --- | --- |
+| `driveEncoder.getPosition()` | wheel rad | motor rotations |
+| `driveEncoder.getVelocity()` | wheel rad/s | motor RPM |
+| `turnEncoder.getPosition()` | module rad | motor rotations |
+| `turnEncoder.setPosition(x)` | module rad | motor rotations |
+| `driveController.setSetpoint(v, kVelocity, ...)` | wheel rad/s | motor RPM |
+| `closedLoop.pid(kP, ...)` | duty per wheel rad/s | duty per motor RPM |
+
+### Verified
+
+`./gradlew build` green with 27 unit tests passing, `ldd -r` clean on `libREVLibWpi.so` against the
+alpha-7 native set, and a headless run that reaches "Robot program startup complete" and holds for
+20 s with no overruns, exceptions or crashes.
+
+**Not verified on hardware.** The drivetrain calibration this branch carries was all measured on
+alpha-6, and nothing here should change it — the gains are in physical units and the conversions
+above are unit-for-unit — but the drive loop's gain now lives in different units on the controller,
+so re-run the spin step response before trusting it.

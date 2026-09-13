@@ -25,7 +25,7 @@ public interface GyroIO {
     public boolean connected = false;
 
     /** Robot heading, CCW-positive. */
-    public Rotation2d yawPosition = Rotation2d.kZero;
+    public Rotation2d yawPosition = Rotation2d.ZERO;
 
     /** Yaw rate, in radians per second, CCW-positive. */
     public double yawVelocityRadPerSec = 0.0;
