@@ -79,6 +79,16 @@ public final class Constants {
      * 7.4% too wide. It matters more than it looks: kinematics converts between wheel speeds and
      * chassis motion through this number, so an oversized track radius makes the robot rotate
      * faster than commanded and biases every wheel-radius estimate taken from a spin.
+     *
+     * <p><b>Still suspect.</b> Only the left-to-right spacing was measured, and both axes are set
+     * from it on the assumption that the drive base is square. The spin says something in the
+     * rotational chain is still 12.7% off (+/- 0.4% over 11 bursts): the robot turns that much
+     * faster than the wheel travel and this geometry predict. Slip cannot cause that -- no-slip is
+     * the upper bound on how fast the wheels can turn the robot -- and the straight-line test
+     * above rules out the wheel radius and gear ratio, which leaves this number and the navX's
+     * scale factor. If the base is really a rectangle rather than a square, a front-to-back
+     * spacing near 8.3 in would account for all of it; measure it before trusting the symmetry
+     * assumed here.
      */
     public static final double TRACK_RADIUS_X = Units.inchesToMeters(5.5);
 
@@ -123,6 +133,16 @@ public final class Constants {
     /**
      * Wheel radius, in inches. Calipered at 1.97-1.98 in diameter, so the nominal 2 in wheel the
      * YAGSL physicalproperties {@code drive.diameter} declared, worn very slightly under.
+     *
+     * <p>Confirmed in motion, not just with calipers: driving 82 in against a tape in teleop
+     * logged 82.04 in of odometry, 0.05% long. Together with the bench-measured
+     * {@link #DRIVE_GEAR_RATIO} that pins straight-line odometry, so any remaining disagreement
+     * between the robot and its model is not in this number.
+     *
+     * <p>Pushing the robot 81 in while disabled logged only 78.7 in, 2.8% short, which is a
+     * property of the test rather than of the wheel. At 1.35:1 the rotor is nearly directly
+     * coupled to the wheel, so back-driving it has to turn a NEO against its own cogging; on a
+     * slick floor the wheels skid instead of rolling and under-report. Prefer the driven test.
      */
     public static final double WHEEL_RADIUS = Units.inchesToMeters(1.975) / 2.0;
 
