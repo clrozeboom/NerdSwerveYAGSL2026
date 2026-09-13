@@ -679,10 +679,15 @@ public final class TuningCommands {
    * error, and the heading drift reported alongside it is a separate, independent read on the gyro.
    *
    * <p><b>The log cannot score this test.</b> Each leg ends when odometry says it has gone far
-   * enough, so odometry closes the loop perfectly by construction and the final pose is always the
-   * start pose. The measurement is physical: mark the floor at a corner of the robot before
-   * starting, run it, and measure how far that corner ends up from its mark. That distance over the
-   * total path length is the odometry error.
+   * enough, so odometry closes the loop on its own terms and learns nothing from doing it. The
+   * measurement is physical: mark the floor at a corner of the robot before starting, run it, and
+   * measure where that corner ends up.
+   *
+   * <p>Not quite by construction, though, and the difference matters. Each leg stops within
+   * {@link #CORNER_TOLERANCE_METERS} of its corner, so odometry finishes somewhere inside that
+   * radius of the start rather than exactly on it — slop of the same order as the error being
+   * looked for. The routine prints where odometry thinks it ended, as forward and left of the
+   * start, and the real error is that vector minus the one measured on the floor.
    *
    * <p>The square is walked counter-clockwise, in the robot's own frame as it sits at the start:
    * forward, then left, then back, then right. It never rotates, so "forward" stays the direction
@@ -725,12 +730,13 @@ public final class TuningCommands {
               Logger.recordOutput("Tuning/Square/DistanceToCorner", error.getNorm());
 
               if (error.getNorm() < CORNER_TOLERANCE_METERS) {
+                // Count the leg just finished before deciding whether to stop, or the last one
+                // never gets counted and the reported path is a quarter short.
                 leg[0]++;
+                pathLength[0] += sideMeters.get();
                 if (leg[0] > SQUARE_CORNERS) {
                   drive.stop();
-                  return;
                 }
-                pathLength[0] += sideMeters.get();
                 return;
               }
 
@@ -759,19 +765,31 @@ public final class TuningCommands {
             () -> {
               drive.stop();
               Pose2d end = drive.getPose();
-              double closure = end.getTranslation().minus(start[0].getTranslation()).getNorm();
-              double headingDrift =
-                  end.getRotation().minus(start[0].getRotation()).getDegrees();
+              // In the frame the robot started in, so it reads as forward/left rather than as
+              // field x/y that mean nothing to whoever is holding the tape measure.
+              Translation2d residual =
+                  end.getTranslation()
+                      .minus(start[0].getTranslation())
+                      .rotateBy(start[0].getRotation().unaryMinus());
+              double headingDrift = end.getRotation().minus(start[0].getRotation()).getDegrees();
               System.out.println("=== Drive square done ===");
-              System.out.printf("  legs completed:     %d of %d%n", Math.min(leg[0], SQUARE_CORNERS), SQUARE_CORNERS);
-              System.out.printf("  path length:        %.3f m%n", pathLength[0]);
-              System.out.printf("  odometry closure:   %.4f m  (near zero by construction)%n", closure);
-              System.out.printf("  heading drift:      %+.2f deg%n", headingDrift);
-              System.out.println("  Now measure the robot against its floor mark. Then:");
               System.out.printf(
-                  "    odometry error = measured_offset_m / %.3f m of path%n", pathLength[0]);
-              System.out.println("  A closure that is short in every direction points at");
-              System.out.println("  WHEEL_RADIUS; one that is skewed points at TRACK_RADIUS.");
+                  "  legs completed:   %d of %d%n", Math.min(leg[0], SQUARE_CORNERS), SQUARE_CORNERS);
+              System.out.printf("  path length:      %.3f m (%.1f in)%n", pathLength[0], pathLength[0] / 0.0254);
+              System.out.printf("  heading drift:    %+.2f deg%n", headingDrift);
+              // Not zero: each leg ends within CORNER_TOLERANCE_METERS of its corner, and that
+              // slop is the same size as the error being measured, so it has to be subtracted
+              // rather than waved away.
+              System.out.printf(
+                  "  odometry stopped: %+.2f in forward, %+.2f in left of the start%n",
+                  residual.getX() / 0.0254, residual.getY() / 0.0254);
+              System.out.println("  Measure the robot against its floor mark, forward and left of");
+              System.out.println("  the start (negative for back and right). The odometry error is");
+              System.out.println("  the vector above minus what you measured, over the path length.");
+              System.out.println("  Short in every direction points at WHEEL_RADIUS; a lateral bias");
+              System.out.println("  that survives it points at module pointing, not distance.");
+              Logger.recordOutput("Tuning/Square/ResidualForwardMeters", residual.getX());
+              Logger.recordOutput("Tuning/Square/ResidualLeftMeters", residual.getY());
               Logger.recordOutput("Tuning/Square/PathLengthMeters", pathLength[0]);
               Logger.recordOutput("Tuning/Square/HeadingDriftDeg", headingDrift);
             },
@@ -796,8 +814,15 @@ public final class TuningCommands {
   private static final int SQUARE_CORNERS = 4;
 
 
-  /** How close to a corner counts as having reached it, in metres. */
-  private static final double CORNER_TOLERANCE_METERS = 0.02;
+  /**
+   * How close to a corner counts as having reached it, in metres.
+   *
+   * <p>This is slop the test cannot see past: the robot stops within it at every corner, so
+   * odometry's own closure is this big before any real error is counted. At 0.02 it was the same
+   * size as the closure being measured, which is no use. 0.01 is about 0.4 in, still reachable at
+   * the approach speeds below without dithering.
+   */
+  private static final double CORNER_TOLERANCE_METERS = 0.01;
 
   /** Approach speed per metre of remaining distance, easing the robot onto each corner. */
   private static final double APPROACH_GAIN_PER_SEC = 1.5;
