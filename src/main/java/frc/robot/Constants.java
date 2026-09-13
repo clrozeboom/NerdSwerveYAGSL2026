@@ -27,7 +27,7 @@ public final class Constants {
    * {@link frc.robot.util.TunableNumber} collapses to its compiled-in value so nothing depends on a
    * dashboard entry that may not be set.
    */
-  public static final boolean TUNING_MODE = true;
+  public static final boolean TUNING_MODE = false;
 
   /**
    * Parameters for the SysId routines, sized to the space available rather than to the defaults.
@@ -127,7 +127,7 @@ public final class Constants {
      * raised from the dashboard during bring-up without a redeploy. Change this once a speed has
      * been settled on, so the robot boots with it.
      */
-    public static final double MAX_LINEAR_SPEED = Units.feetToMeters(1);
+    public static final double MAX_LINEAR_SPEED = Units.feetToMeters(2);
 
     /** Robot mass, from the previous Constants.java: (148 lb - 20.3 lb) converted to kg. */
     public static final double ROBOT_MASS_KG = (148 - 20.3) * 0.453592;
