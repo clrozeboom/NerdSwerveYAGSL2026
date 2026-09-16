@@ -3,16 +3,18 @@
 Team 5010's swerve drivetrain, written from scratch against **WPILib 2027.0.0-alpha-7** using the
 **Commands v2** framework and **AdvantageKit** for logging and deterministic replay.
 
-> ### ⚠ This branch does not run on hardware yet
+> ### REVLib's alpha-7 blocker has cleared — this branch still pins alpha-6
 >
-> REVLib 2027.0.0-alpha-6 — the newest there is — has a native library that cannot link against
-> alpha-7. The JVM dies with a `symbol lookup error` as soon as the first `SparkMax` is
-> constructed, which is not something the robot program can catch. Deploy
-> `claude/swerve-2027-advantagekit` (alpha-6) until REV ships a rebuild; see
-> [docs/UPGRADE-ALPHA7.md](docs/UPGRADE-ALPHA7.md) for the two missing symbols and
-> `tools/check-alpha7-readiness.sh` for when it clears.
+> `tools/check-alpha7-readiness.sh` confirmed on 2026-09-16 that REVLib 2027.0.0-alpha-7 (published
+> 2026-09-14) is clean against alpha-7 on **both** checks it runs: no missing classes, and
+> `libREVLibWpi.so` resolves cleanly against alpha-7's shared libraries (the earlier alpha-6 build
+> needed `fmt::v12::vformat` and `wpi::util::WaitForObject`, which alpha-7 doesn't export). See
+> [docs/UPGRADE-ALPHA7.md](docs/UPGRADE-ALPHA7.md) for the history.
 >
-> Everything else on this branch is done and verified: build, tests, simulation and replay.
+> `vendordeps/REVLib.json` here still pins `2027.0.0-alpha-6`, the broken build, so this branch has
+> not itself been re-verified on hardware yet. Deploy `claude/swerve-2027-advantagekit` (alpha-6)
+> until the pin is bumped to `2027.0.0-alpha-7` and a SPARK MAX has actually been constructed against
+> it. Everything else on this branch is done and verified: build, tests, simulation and replay.
 
 This replaces the YAGSL-based 2026 project. Every drivetrain number here — CAN IDs, gear ratios,
 encoder offsets, current limits, module positions, feedforward gains — was carried over from that
@@ -452,11 +454,14 @@ against the real WPILib 2027 alpha-7 toolchain and all six unit tests pass; the 
 clean in simulation with no loop overruns; and an AdvantageKit replay round-trip has been re-verified
 on alpha-7, producing a `_replay.wpilog` with 39 recomputed output keys across all four modules.
 
-**The hardware path is broken, and none of the above could detect it.** Simulation runs through
-`ModuleIOSim`, which never loads REVLib's native libraries, so a green build and a clean sim say
-nothing about whether the SPARK MAXes will work. They will not: `libREVLibWpi.so` is built against
-symbols alpha-7 removed, and constructing a `SparkMax` kills the JVM outright. Measured directly —
-the same `SparkMax` construction plus `configure()` succeeds on alpha-6 and dies on alpha-7.
+**The hardware path was broken on the REVLib build this pin uses, and none of the above could detect
+it.** Simulation runs through `ModuleIOSim`, which never loads REVLib's native libraries, so a green
+build and a clean sim say nothing about whether the SPARK MAXes will work. On REVLib
+2027.0.0-alpha-6 they would not: `libREVLibWpi.so` was built against symbols alpha-7 removed, and
+constructing a `SparkMax` killed the JVM outright. REVLib 2027.0.0-alpha-7 (published 2026-09-14)
+fixes this — `tools/check-alpha7-readiness.sh` confirms its native library resolves cleanly against
+alpha-7 — but this branch still pins alpha-6 (see the callout above) and hasn't been re-verified
+against the fixed build yet.
 
 Beyond that, nothing has touched real hardware on either branch. No SPARK MAX has answered a single
 call. Expect the usual first-bringup work — encoder directions, absolute offsets, and the PID gains

@@ -1,13 +1,18 @@
 # Upgrading to WPILib 2027.0.0-alpha-7
 
-Status: **migrated but NOT deployable, 2026-09-02.** The code move to alpha-7 is done on
-`claude/swerve-2027-alpha7` and builds, tests and replays cleanly. It will **not run on the
-robot**: REVLib 2027.0.0-alpha-6's native library cannot link against alpha-7.
+Status: **migrated, vendor blocker cleared 2026-09-16, pin not yet bumped.** The code move to
+alpha-7 is done on `claude/swerve-2027-alpha7` and builds, tests and replays cleanly. It could not
+run on the robot on REVLib 2027.0.0-alpha-6, whose native library cannot link against alpha-7.
+REVLib 2027.0.0-alpha-7 (published 2026-09-14) fixes this — `tools/check-alpha7-readiness.sh`
+confirmed on 2026-09-16 that its native library resolves cleanly against alpha-7 — but
+`claude/swerve-2027-alpha7`'s `vendordeps/REVLib.json` still pins the broken `alpha-6` build, so the
+branch itself has not been re-verified on hardware yet.
 
-> **Do not deploy `claude/swerve-2027-alpha7` to hardware.** The JVM dies with a process-level
-> `symbol lookup error` the moment the first `SparkMax` is constructed — not an exception a robot
-> program can catch or recover from. `claude/swerve-2027-advantagekit` (alpha-6) remains the
-> deployable branch until REV ships a rebuild.
+> **Do not deploy `claude/swerve-2027-alpha7` to hardware as it stands.** It still pins REVLib
+> 2027.0.0-alpha-6, whose JVM dies with a process-level `symbol lookup error` the moment the first
+> `SparkMax` is constructed — not an exception a robot program can catch or recover from.
+> `claude/swerve-2027-advantagekit` (alpha-6) remains the deployable branch until the pin is bumped
+> to REVLib 2027.0.0-alpha-7 and a SPARK MAX has actually been constructed against it.
 
 ### The native ABI break
 
