@@ -14,9 +14,9 @@ import frc.robot.subsystems.drive.ModuleIOSpark;
 import frc.robot.subsystems.drive.riobridge.GyroIORioBridge;
 import frc.robot.subsystems.drive.riobridge.RioBridgeCan;
 import org.littletonrobotics.junction.networktables.LoggedNetworkChooser;
-import org.wpilib.command2.Command;
-import org.wpilib.command2.Commands;
-import org.wpilib.command2.button.CommandGamepad;
+import org.wpilib.command3.Command;
+import org.wpilib.command3.Scheduler;
+import org.wpilib.command3.button.CommandGamepad;
 import org.wpilib.framework.RobotBase;
 
 /**
@@ -64,6 +64,12 @@ public class RobotContainer {
               new ModuleIOSim());
     }
 
+    // Commands v3's Mechanism interface has no periodic() hook, so Drive's has to be handed to the
+    // scheduler explicitly. Sideloads run before triggers are polled and before any command body,
+    // which is the slot CommandScheduler used to call subsystem periodic() in -- so every command
+    // still sees inputs read this same loop, as it did under v2.
+    Scheduler.getDefault().addPeriodic(drive::periodic);
+
     configureAutoChooser();
     configureBindings();
   }
@@ -97,8 +103,11 @@ public class RobotContainer {
     // Hold the modules in an X to resist being pushed.
     driver.faceRight().whileTrue(DriveCommands.stopWithX(drive));
 
-    // Call the direction the robot currently faces "forward".
-    driver.start().onTrue(Commands.runOnce(drive::zeroHeading).ignoringDisable(true));
+    // Call the direction the robot currently faces "forward". No ignoringDisable in v3: the
+    // framework has no enabled/disabled gate at all, so this runs whenever the button is pressed.
+    driver
+        .start()
+        .onTrue(Command.noRequirements(coroutine -> drive.zeroHeading()).named("Zero Heading"));
 
     // Back re-zeroes the modules, for the common case of having straightened the wheels by hand
     // after pushing the robot around. Only acts while disabled — see TuningCommands.zeroModules.
@@ -108,7 +117,8 @@ public class RobotContainer {
   }
 
   private void configureAutoChooser() {
-    autoChooser.addDefault("Do Nothing", Commands.none());
+    autoChooser.addDefault(
+        "Do Nothing", Command.noRequirements(coroutine -> {}).named("Do Nothing"));
     // Bring-up routines. These live on the auto chooser because that is the one place a command can
     // be picked and run without a controller binding; see TuningCommands for what each one measures
     // and which of them move the robot.

@@ -11,10 +11,11 @@ import frc.robot.util.TunableNumber;
 import java.util.ArrayList;
 import java.util.List;
 import org.littletonrobotics.junction.Logger;
-import org.wpilib.command2.Command;
-import org.wpilib.command2.Commands;
-import org.wpilib.command2.sysid.SysIdRoutine;
+import java.util.function.DoubleConsumer;
+import org.wpilib.command3.Command;
+import org.wpilib.command3.Coroutine;
 import org.wpilib.driverstation.RobotState;
+import org.wpilib.sysid.SysIdRoutineLog;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.geometry.Translation2d;
@@ -57,19 +58,24 @@ public final class TuningCommands {
     TunableNumber periodSecs = new TunableNumber("Tuning/Turn/StepPeriodSecs", 1.5);
     Timer timer = new Timer();
 
-    return Commands.runEnd(
-            () -> {
-              // Alternate between +step and -step every period.
-              boolean high = (long) (timer.get() / periodSecs.get()) % 2 == 0;
-              double target = high ? stepDegrees.get() : -stepDegrees.get();
-              drive.runTurnSetpoint(Rotation2d.fromDegrees(target));
-            },
+    return drive
+        .run(
+            coroutine -> {
+              timer.restart();
+              while (true) {
+                // Alternate between +step and -step every period.
+                boolean high = (long) (timer.get() / periodSecs.get()) % 2 == 0;
+                double target = high ? stepDegrees.get() : -stepDegrees.get();
+                drive.runTurnSetpoint(Rotation2d.fromDegrees(target));
+                coroutine.yield();
+              }
+            })
+        .whenCanceled(
             () -> {
               drive.stop();
               timer.stop();
-            },
-            drive)
-        .beforeStarting(timer::restart);
+            })
+        .named("Turn Step Response");
   }
 
   /**
@@ -91,19 +97,24 @@ public final class TuningCommands {
     TunableNumber periodSecs = new TunableNumber("Tuning/Drive/StepPeriodSecs", 2.0);
     Timer timer = new Timer();
 
-    return Commands.runEnd(
-            () -> {
-              boolean high = (long) (timer.get() / periodSecs.get()) % 2 == 0;
-              drive.runDriveSetpoint(high ? stepRadPerSec.get() : 0.0);
-              Logger.recordOutput(
-                  "Tuning/DriveMeasuredRadPerSec", drive.getAverageWheelVelocityRadPerSec());
-            },
+    return drive
+        .run(
+            coroutine -> {
+              timer.restart();
+              while (true) {
+                boolean high = (long) (timer.get() / periodSecs.get()) % 2 == 0;
+                drive.runDriveSetpoint(high ? stepRadPerSec.get() : 0.0);
+                Logger.recordOutput(
+                    "Tuning/DriveMeasuredRadPerSec", drive.getAverageWheelVelocityRadPerSec());
+                coroutine.yield();
+              }
+            })
+        .whenCanceled(
             () -> {
               drive.stop();
               timer.stop();
-            },
-            drive)
-        .beforeStarting(timer::restart);
+            })
+        .named("Drive Step Response");
   }
 
   /**
@@ -123,19 +134,24 @@ public final class TuningCommands {
     TunableNumber periodSecs = new TunableNumber("Tuning/Drive/StepPeriodSecs", 2.0);
     Timer timer = new Timer();
 
-    return Commands.runEnd(
-            () -> {
-              boolean high = (long) (timer.get() / periodSecs.get()) % 2 == 0;
-              drive.runSpinSetpoint(high ? stepRadPerSec.get() : 0.0);
-              Logger.recordOutput(
-                  "Tuning/DriveMeasuredRadPerSec", drive.getAverageWheelVelocityRadPerSec());
-            },
+    return drive
+        .run(
+            coroutine -> {
+              timer.restart();
+              while (true) {
+                boolean high = (long) (timer.get() / periodSecs.get()) % 2 == 0;
+                drive.runSpinSetpoint(high ? stepRadPerSec.get() : 0.0);
+                Logger.recordOutput(
+                    "Tuning/DriveMeasuredRadPerSec", drive.getAverageWheelVelocityRadPerSec());
+                coroutine.yield();
+              }
+            })
+        .whenCanceled(
             () -> {
               drive.stop();
               timer.stop();
-            },
-            drive)
-        .beforeStarting(timer::restart);
+            })
+        .named("Spin Step Response");
   }
 
   /**
@@ -164,17 +180,23 @@ public final class TuningCommands {
    */
   public static Command feedforwardRamp(Drive drive) {
     Timer timer = new Timer();
-    return Commands.runEnd(
-            () -> {
-              double volts = timer.get() * Constants.SysId.RAMP_RATE_VOLTS_PER_SEC;
-              drive.runCharacterizationSpin(volts);
-              Logger.recordOutput("Tuning/Feedforward/Volts", volts);
-              for (Module module : drive.getModules()) {
-                Logger.recordOutput(
-                    "Tuning/Feedforward/" + module.getName() + "/SpeedMetersPerSec",
-                    module.getVelocityMetersPerSec());
+    return drive
+        .run(
+            coroutine -> {
+              timer.restart();
+              while (true) {
+                double volts = timer.get() * Constants.SysId.RAMP_RATE_VOLTS_PER_SEC;
+                drive.runCharacterizationSpin(volts);
+                Logger.recordOutput("Tuning/Feedforward/Volts", volts);
+                for (Module module : drive.getModules()) {
+                  Logger.recordOutput(
+                      "Tuning/Feedforward/" + module.getName() + "/SpeedMetersPerSec",
+                      module.getVelocityMetersPerSec());
+                }
+                coroutine.yield();
               }
-            },
+            })
+        .whenCanceled(
             () -> {
               drive.stop();
               timer.stop();
@@ -190,10 +212,9 @@ public final class TuningCommands {
                     module.getName(), module.getDriveKs(), module.getDriveKv());
               }
               System.out.println("  Set the measured values in Constants.ModuleConfig.");
-            },
-            drive)
-        .beforeStarting(timer::restart)
-        .until(() -> timer.get() >= Constants.SysId.QUASISTATIC_TIMEOUT_SECS);
+            })
+        .until(() -> timer.get() >= Constants.SysId.QUASISTATIC_TIMEOUT_SECS)
+        .named("Feedforward Ramp");
   }
 
   /**
@@ -214,8 +235,8 @@ public final class TuningCommands {
    * @return a command that zeroes once and ends
    */
   public static Command zeroModules(Drive drive) {
-    return Commands.runOnce(
-            () -> {
+    return Command.noRequirements(
+            coroutine -> {
               if (!RobotState.isDisabled()) {
                 System.out.println("Zero Modules ignored: only runs while disabled.");
                 return;
@@ -224,8 +245,10 @@ public final class TuningCommands {
               System.out.println(
                   "=== Modules zeroed. All four now read 0 deg; make sure they were straight. ===");
             })
-        // No motion, and the wheels have to be positioned by hand, so let it run disabled.
-        .ignoringDisable(true);
+        // Commands v3 has no enabled/disabled gate, so v2's ignoringDisable(true) has no
+        // equivalent and needs none. The guard above is what keeps this disabled-only, and it was
+        // always the real one -- ignoringDisable only ever granted permission to run.
+        .named("Zero Modules");
   }
 
   /**
@@ -248,8 +271,8 @@ public final class TuningCommands {
    * @return a command that reports once and ends
    */
   public static Command reportEncoderOffsets(Drive drive) {
-    return Commands.runOnce(
-            () -> {
+    return Command.noRequirements(
+            coroutine -> {
               System.out.println("=== Absolute encoder offsets ===");
               System.out.println("Wheels must be pointing straight forward for these to be valid.");
               for (Module module : drive.getModules()) {
@@ -265,8 +288,9 @@ public final class TuningCommands {
               }
               System.out.println("Copy these into Constants.ModuleConfig and redeploy.");
             })
-        // No motion, and the wheels have to be positioned by hand, so let it run disabled.
-        .ignoringDisable(true);
+        // Nothing moves, so there is nothing to gate on; see zeroModules for why v3 needs no
+        // ignoringDisable.
+        .named("Report Encoder Offsets");
   }
 
   private static double wrapDegrees(double degrees) {
@@ -296,8 +320,16 @@ public final class TuningCommands {
     TunableNumber velocityRadPerSec = new TunableNumber("Tuning/WheelRadius/SpeedRadPerSec", 8.0);
     double[] startRadians = new double[1];
 
-    return Commands.runEnd(
-            () -> drive.runDriveSetpoint(velocityRadPerSec.get()),
+    return drive
+        .run(
+            coroutine -> {
+              startRadians[0] = drive.getCharacterizationPosition();
+              while (true) {
+                drive.runDriveSetpoint(velocityRadPerSec.get());
+                coroutine.yield();
+              }
+            })
+        .whenCanceled(
             () -> {
               drive.stop();
               double travelledRadians = drive.getCharacterizationPosition() - startRadians[0];
@@ -310,12 +342,9 @@ public final class TuningCommands {
                   "    WHEEL_RADIUS = %.6f * (measured_m / %.4f)%n",
                   Constants.Module.WHEEL_RADIUS, believedMeters);
               Logger.recordOutput("Tuning/WheelRadius/BelievedMeters", believedMeters);
-            },
-            drive)
-        .beforeStarting(() -> startRadians[0] = drive.getCharacterizationPosition())
-        .until(
-            () ->
-                drive.getCharacterizationPosition() - startRadians[0] >= wheelRadians.get());
+            })
+        .until(() -> drive.getCharacterizationPosition() - startRadians[0] >= wheelRadians.get())
+        .named("Measure Wheel Radius");
   }
 
   /**
@@ -356,16 +385,129 @@ public final class TuningCommands {
     return sysIdRoutine(drive, drive::runCharacterizationSpin, "Spin");
   }
 
-  private static SysIdRoutine sysIdRoutine(
-      Drive drive, java.util.function.DoubleConsumer output, String name) {
-    return new SysIdRoutine(
-        new SysIdRoutine.Config(
-            Units.Volts.per(Units.Second).of(Constants.SysId.RAMP_RATE_VOLTS_PER_SEC),
-            Units.Volts.of(Constants.SysId.STEP_VOLTS),
-            Units.Seconds.of(Constants.SysId.QUASISTATIC_TIMEOUT_SECS),
-            state -> Logger.recordOutput("Tuning/SysIdState", state.toString())),
-        new SysIdRoutine.Mechanism(
-            voltage -> output.accept(voltage.in(Units.Volts)), null, drive, "Drive" + name));
+  private static SysIdRoutine sysIdRoutine(Drive drive, DoubleConsumer output, String name) {
+    return new SysIdRoutine(drive, output, "Drive" + name);
+  }
+
+  /**
+   * The four SysId voltage profiles, rebuilt on commands v3.
+   *
+   * <p>Commands v3 ships no SysId support -- {@code org.wpilib.command2.sysid.SysIdRoutine} exists
+   * only in v2, and the two vendordeps refuse to coexist -- so the profiles are generated here
+   * instead. Only the command plumbing was v2's; the part that matters to the analyser is the log,
+   * and that is unchanged. The state strings come from {@link SysIdRoutineLog.State}, which lives
+   * in wpilibj core rather than in either command framework, so {@code Tuning/SysIdState} still
+   * reads {@code quasistatic-forward}, {@code dynamic-reverse} and so on, and the tool still splits
+   * a log into the four tests exactly as before.
+   *
+   * <p>The profiles themselves are v2's, to the volt: a quasistatic test ramps at
+   * {@link Constants.SysId#RAMP_RATE_VOLTS_PER_SEC} from zero, a dynamic test holds
+   * {@link Constants.SysId#STEP_VOLTS} flat, reverse negates, and every test drops to zero volts
+   * and writes {@code none} when it ends however it ends.
+   *
+   * <p>What is <em>not</em> carried over is v2's per-motor {@code SysIdRoutineLog} data callback,
+   * which this project never supplied -- it passed {@code null} and relied on AdvantageKit logging
+   * the drive signals itself, which it still does.
+   */
+  public static final class SysIdRoutine {
+    /** Which way round to run a test. */
+    public enum Direction {
+      /** Positive voltage. */
+      FORWARD,
+      /** Negative voltage. */
+      REVERSE
+    }
+
+    private final Drive drive;
+    private final DoubleConsumer output;
+    private final String name;
+
+    private SysIdRoutine(Drive drive, DoubleConsumer output, String name) {
+      this.drive = drive;
+      this.output = output;
+      this.name = name;
+    }
+
+    /**
+     * A slow voltage ramp, for the gains that show up at steady state.
+     *
+     * @param direction which way to ramp
+     * @return a command that ramps until the quasistatic timeout, then stops
+     */
+    public Command quasistatic(Direction direction) {
+      double sign = direction == Direction.FORWARD ? 1.0 : -1.0;
+      SysIdRoutineLog.State state =
+          direction == Direction.FORWARD
+              ? SysIdRoutineLog.State.QUASISTATIC_FORWARD
+              : SysIdRoutineLog.State.QUASISTATIC_REVERSE;
+      Timer timer = new Timer();
+
+      return test(
+          coroutine -> {
+            timer.restart();
+            while (true) {
+              output.accept(sign * timer.get() * Constants.SysId.RAMP_RATE_VOLTS_PER_SEC);
+              Logger.recordOutput("Tuning/SysIdState", state.toString());
+              coroutine.yield();
+            }
+          },
+          () -> timer.get() >= Constants.SysId.QUASISTATIC_TIMEOUT_SECS,
+          state);
+    }
+
+    /**
+     * A voltage step held flat, for the gains that only show up under acceleration.
+     *
+     * @param direction which way to step
+     * @return a command that holds the step until the dynamic timeout, then stops
+     */
+    public Command dynamic(Direction direction) {
+      double sign = direction == Direction.FORWARD ? 1.0 : -1.0;
+      SysIdRoutineLog.State state =
+          direction == Direction.FORWARD
+              ? SysIdRoutineLog.State.DYNAMIC_FORWARD
+              : SysIdRoutineLog.State.DYNAMIC_REVERSE;
+      Timer timer = new Timer();
+
+      return test(
+          coroutine -> {
+            timer.restart();
+            while (true) {
+              output.accept(sign * Constants.SysId.STEP_VOLTS);
+              Logger.recordOutput("Tuning/SysIdState", state.toString());
+              coroutine.yield();
+            }
+          },
+          // v2 took the dynamic timeout from a withTimeout() on the returned command rather than
+          // from its Config, which set the quasistatic one. Same two numbers, applied the same way.
+          () -> timer.get() >= Constants.SysId.DYNAMIC_TIMEOUT_SECS,
+          state);
+    }
+
+    /**
+     * The shape both tests share: drive the mechanism until the end condition, then stop it and
+     * mark the log as running no test.
+     *
+     * <p>The stop goes in {@code whenCanceled} rather than in a {@code finally}, because v3 ends a
+     * command by abandoning its coroutine rather than by unwinding it -- an {@code until} condition
+     * cancels the command, and a {@code finally} in the body would never run. {@code whenCanceled}
+     * is the hook that does, and since the body is an unbounded loop it is the only way out.
+     */
+    private Command test(
+        java.util.function.Consumer<Coroutine> body,
+        java.util.function.BooleanSupplier endCondition,
+        SysIdRoutineLog.State state) {
+      return drive
+          .run(body)
+          .whenCanceled(
+              () -> {
+                output.accept(0.0);
+                drive.stop();
+                Logger.recordOutput("Tuning/SysIdState", SysIdRoutineLog.State.NONE.toString());
+              })
+          .until(endCondition)
+          .named("sysid-" + state + "-" + name);
+    }
   }
 
   /**
@@ -427,52 +569,54 @@ public final class TuningCommands {
   }
 
   private static Command sysIdFull(SysIdRoutine routine, boolean spin) {
-    return Commands.sequence(
-        Commands.runOnce(
-            () -> {
-              System.out.println(spin ? "=== Drive SysId (spin) ===" : "=== Drive SysId ===");
-              System.out.printf(
-                  "  quasistatic: %.1f V/s for %.1fs -> peak %.2f V, %.2f m/s, about %.1f m each%n",
-                  Constants.SysId.RAMP_RATE_VOLTS_PER_SEC,
-                  Constants.SysId.QUASISTATIC_TIMEOUT_SECS,
-                  Constants.SysId.RAMP_RATE_VOLTS_PER_SEC
-                      * Constants.SysId.QUASISTATIC_TIMEOUT_SECS,
-                  predictedSpeed(
-                      Constants.SysId.RAMP_RATE_VOLTS_PER_SEC
-                          * Constants.SysId.QUASISTATIC_TIMEOUT_SECS),
-                  quasistaticDistance());
-              System.out.printf(
-                  "  dynamic:     %.1f V for %.1fs -> %.2f m/s, about %.1f m each%n",
-                  Constants.SysId.STEP_VOLTS,
-                  Constants.SysId.DYNAMIC_TIMEOUT_SECS,
-                  predictedSpeed(Constants.SysId.STEP_VOLTS),
-                  dynamicDistance());
-              double longest = Math.max(quasistaticDistance(), dynamicDistance());
-              if (spin) {
-                System.out.printf(
-                    "  Spinning: %.2f rotations for the longest run. Clear about a metre around the%n"
-                        + "  robot; it stays over its own footprint.%n",
-                    longest / (2 * Math.PI * Constants.Drivebase.DRIVE_BASE_RADIUS));
-              } else {
-                System.out.printf(
-                    "  Longest single run is about %.1f m. The robot returns toward its start between%n"
-                        + "  forward and reverse pairs, so clear roughly that much in each direction.%n",
-                    longest);
-              }
-            }),
-        routine.quasistatic(SysIdRoutine.Direction.FORWARD),
-        Commands.waitSeconds(1.0),
-        routine.quasistatic(SysIdRoutine.Direction.REVERSE),
-        Commands.waitSeconds(1.0),
-        // The Config timeout applies to both test types, so cap the dynamic runs separately —
-        // they reach full speed immediately and would otherwise cover far more ground.
-        routine
-            .dynamic(SysIdRoutine.Direction.FORWARD)
-            .withTimeout(Constants.SysId.DYNAMIC_TIMEOUT_SECS),
-        Commands.waitSeconds(1.0),
-        routine
-            .dynamic(SysIdRoutine.Direction.REVERSE)
-            .withTimeout(Constants.SysId.DYNAMIC_TIMEOUT_SECS));
+    return Command.sequence(
+            Command.noRequirements(coroutine -> printSysIdBriefing(spin)).named("SysId Briefing"),
+            routine.quasistatic(SysIdRoutine.Direction.FORWARD),
+            pause(),
+            routine.quasistatic(SysIdRoutine.Direction.REVERSE),
+            pause(),
+            // The dynamic runs reach full speed immediately and would otherwise cover far more
+            // ground than the quasistatic ones, so they carry their own shorter timeout.
+            routine.dynamic(SysIdRoutine.Direction.FORWARD),
+            pause(),
+            routine.dynamic(SysIdRoutine.Direction.REVERSE))
+        .named(spin ? "Spin SysId" : "Drive SysId");
+  }
+
+  /** What the four runs are about to do, and how much floor they need. */
+  private static void printSysIdBriefing(boolean spin) {
+    System.out.println(spin ? "=== Drive SysId (spin) ===" : "=== Drive SysId ===");
+    System.out.printf(
+        "  quasistatic: %.1f V/s for %.1fs -> peak %.2f V, %.2f m/s, about %.1f m each%n",
+        Constants.SysId.RAMP_RATE_VOLTS_PER_SEC,
+        Constants.SysId.QUASISTATIC_TIMEOUT_SECS,
+        Constants.SysId.RAMP_RATE_VOLTS_PER_SEC * Constants.SysId.QUASISTATIC_TIMEOUT_SECS,
+        predictedSpeed(
+            Constants.SysId.RAMP_RATE_VOLTS_PER_SEC * Constants.SysId.QUASISTATIC_TIMEOUT_SECS),
+        quasistaticDistance());
+    System.out.printf(
+        "  dynamic:     %.1f V for %.1fs -> %.2f m/s, about %.1f m each%n",
+        Constants.SysId.STEP_VOLTS,
+        Constants.SysId.DYNAMIC_TIMEOUT_SECS,
+        predictedSpeed(Constants.SysId.STEP_VOLTS),
+        dynamicDistance());
+    double longest = Math.max(quasistaticDistance(), dynamicDistance());
+    if (spin) {
+      System.out.printf(
+          "  Spinning: %.2f rotations for the longest run. Clear about a metre around the%n"
+              + "  robot; it stays over its own footprint.%n",
+          longest / (2 * Math.PI * Constants.Drivebase.DRIVE_BASE_RADIUS));
+    } else {
+      System.out.printf(
+          "  Longest single run is about %.1f m. The robot returns toward its start between%n"
+              + "  forward and reverse pairs, so clear roughly that much in each direction.%n",
+          longest);
+    }
+  }
+
+  /** A second of stillness between tests, so the robot can be repositioned. */
+  private static Command pause() {
+    return Command.waitFor(Units.Seconds.of(1.0)).named("SysId Pause");
   }
   /**
    * Holds a series of fixed voltages long enough for the speed to settle at each, for measuring
@@ -513,42 +657,59 @@ public final class TuningCommands {
     Timer timer = new Timer();
     List<SweepStep> steps = new ArrayList<>();
 
-    return Commands.runEnd(
-            () -> {
-              double stepSecs = settleSecs.get() + measureSecs.get();
-              int index = (int) (timer.get() / stepSecs);
-              double volts = startVolts.get() + index * stepVolts.get();
-              drive.runCharacterizationSpin(volts);
-              Logger.recordOutput("Tuning/SteadySweep/Volts", volts);
-
-              while (steps.size() <= index) {
-                steps.add(new SweepStep(startVolts.get() + steps.size() * stepVolts.get()));
+    return drive
+        .run(
+            coroutine -> {
+              steps.clear();
+              timer.restart();
+              while (true) {
+                sweepTick(drive, steps, timer, startVolts, stepVolts, settleSecs, measureSecs);
+                coroutine.yield();
               }
-              // Only the tail of each step counts: the first settleSecs is the wheel getting there.
-              if (timer.get() - index * stepSecs >= settleSecs.get()) {
-                Module[] modules = drive.getModules();
-                for (int i = 0; i < modules.length; i++) {
-                  steps.get(index).add(i, modules[i].getVelocityMetersPerSec());
-                }
-              }
-            },
+            })
+        .whenCanceled(
             () -> {
               drive.stop();
               timer.stop();
               reportSweep(drive, steps);
-            },
-            drive)
-        .beforeStarting(
-            () -> {
-              steps.clear();
-              timer.restart();
             })
         .until(
             () ->
                 startVolts.get()
                         + (int) (timer.get() / (settleSecs.get() + measureSecs.get()))
                             * stepVolts.get()
-                    > endVolts.get());
+                    > endVolts.get())
+        .named("Steady-State Sweep");
+  }
+
+  /**
+   * One loop of {@link #steadyStateSweep(Drive)}: hold this step's voltage, and once the wheel has
+   * had time to settle, accumulate what speed it settled at.
+   */
+  private static void sweepTick(
+      Drive drive,
+      List<SweepStep> steps,
+      Timer timer,
+      TunableNumber startVolts,
+      TunableNumber stepVolts,
+      TunableNumber settleSecs,
+      TunableNumber measureSecs) {
+    double stepSecs = settleSecs.get() + measureSecs.get();
+    int index = (int) (timer.get() / stepSecs);
+    double volts = startVolts.get() + index * stepVolts.get();
+    drive.runCharacterizationSpin(volts);
+    Logger.recordOutput("Tuning/SteadySweep/Volts", volts);
+
+    while (steps.size() <= index) {
+      steps.add(new SweepStep(startVolts.get() + steps.size() * stepVolts.get()));
+    }
+    // Only the tail of each step counts: the first settleSecs is the wheel getting there.
+    if (timer.get() - index * stepSecs >= settleSecs.get()) {
+      Module[] modules = drive.getModules();
+      for (int i = 0; i < modules.length; i++) {
+        steps.get(index).add(i, modules[i].getVelocityMetersPerSec());
+      }
+    }
   }
 
   /** One voltage step of {@link #steadyStateSweep(Drive)}, accumulating settled speed per module. */
@@ -711,57 +872,26 @@ public final class TuningCommands {
     int[] leg = new int[1];
     double[] pathLength = new double[1];
 
-    return Commands.runEnd(
-            () -> {
-              // Corners are laid out relative to where the robot was pointing when the routine
-              // started, not along the field axes. Otherwise the shape of the square would depend
-              // on whatever the gyro happened to read, and setting the test up would mean zeroing
-              // the heading first and trusting it -- in a room this size, a heading that is off by
-              // 45 degrees sends the robot diagonally into a wall.
-              Translation2d target =
-                  start[0]
-                      .getTranslation()
-                      .plus(
-                          squareCorner(leg[0], sideMeters.get())
-                              .rotateBy(start[0].getRotation()));
+    return drive
+        .run(
+            coroutine -> {
+              start[0] = drive.getPose();
+              leg[0] = 1;
+              pathLength[0] = 0.0;
+              System.out.println("=== Drive square starting ===");
+              System.out.printf(
+                  "  %.2f m sides need about %.2f m square of clear floor, robot included.%n",
+                  sideMeters.get(), sideMeters.get() + ROBOT_ENVELOPE_METERS);
+              System.out.println("  Counter-clockwise from here: forward, left, back, right.");
+              System.out.println("  All of it lies forward and left of the robot, which never turns.");
+              System.out.println("  Mark the floor at one corner of the robot first.");
 
-              Translation2d error = target.minus(drive.getPose().getTranslation());
-              Logger.recordOutput("Tuning/Square/Leg", leg[0]);
-              Logger.recordOutput("Tuning/Square/DistanceToCorner", error.getNorm());
-
-              if (error.getNorm() < CORNER_TOLERANCE_METERS) {
-                // Count the leg just finished before deciding whether to stop, or the last one
-                // never gets counted and the reported path is a quarter short.
-                leg[0]++;
-                pathLength[0] += sideMeters.get();
-                if (leg[0] > SQUARE_CORNERS) {
-                  drive.stop();
-                }
-                return;
+              while (true) {
+                squareTick(drive, start, leg, pathLength, sideMeters, speedMetersPerSec);
+                coroutine.yield();
               }
-
-              // Full speed down the leg, easing off over the last stretch so it settles on the
-              // corner instead of overshooting it and crabbing back.
-              double speed =
-                  Math.min(speedMetersPerSec.get(), APPROACH_GAIN_PER_SEC * error.getNorm());
-              speed = Math.max(speed, MIN_APPROACH_METERS_PER_SEC);
-              Translation2d velocity = error.div(error.getNorm()).times(speed);
-
-              // Hold the starting heading. Any rotation here would smear translation error and
-              // heading error together, which is exactly what this test is built to keep apart.
-              double headingError =
-                  start[0].getRotation().minus(drive.getPose().getRotation()).getRadians();
-              double omega =
-                  // WPILib 2027 dropped MathUtil.clamp in favour of the JDK's own.
-                  Math.clamp(
-                      HEADING_GAIN_PER_SEC * headingError,
-                      -MAX_CORRECTION_RAD_PER_SEC,
-                      MAX_CORRECTION_RAD_PER_SEC);
-
-              drive.runVelocity(
-                  new ChassisVelocities(velocity.getX(), velocity.getY(), omega)
-                      .toRobotRelative(drive.getRotation()));
-            },
+            })
+        .whenCanceled(
             () -> {
               drive.stop();
               Pose2d end = drive.getPose();
@@ -792,23 +922,69 @@ public final class TuningCommands {
               Logger.recordOutput("Tuning/Square/ResidualLeftMeters", residual.getY());
               Logger.recordOutput("Tuning/Square/PathLengthMeters", pathLength[0]);
               Logger.recordOutput("Tuning/Square/HeadingDriftDeg", headingDrift);
-            },
-            drive)
-        .beforeStarting(
-            () -> {
-              start[0] = drive.getPose();
-              leg[0] = 1;
-              pathLength[0] = 0.0;
-              System.out.println("=== Drive square starting ===");
-              System.out.printf(
-                  "  %.2f m sides need about %.2f m square of clear floor, robot included.%n",
-                  sideMeters.get(), sideMeters.get() + ROBOT_ENVELOPE_METERS);
-              System.out.println("  Counter-clockwise from here: forward, left, back, right.");
-              System.out.println("  All of it lies forward and left of the robot, which never turns.");
-              System.out.println("  Mark the floor at one corner of the robot first.");
             })
-        .until(() -> leg[0] > SQUARE_CORNERS);
+        .until(() -> leg[0] > SQUARE_CORNERS)
+        .named("Drive Square");
   }
+
+  /** One loop of {@link #driveSquare(Drive)}: head for the current corner, or advance to the next. */
+  private static void squareTick(
+      Drive drive,
+      Pose2d[] start,
+      int[] leg,
+      double[] pathLength,
+      TunableNumber sideMeters,
+      TunableNumber speedMetersPerSec) {
+    // Corners are laid out relative to where the robot was pointing when the routine
+    // started, not along the field axes. Otherwise the shape of the square would depend
+    // on whatever the gyro happened to read, and setting the test up would mean zeroing
+    // the heading first and trusting it -- in a room this size, a heading that is off by
+    // 45 degrees sends the robot diagonally into a wall.
+    Translation2d target =
+        start[0]
+            .getTranslation()
+            .plus(
+                squareCorner(leg[0], sideMeters.get())
+                    .rotateBy(start[0].getRotation()));
+
+    Translation2d error = target.minus(drive.getPose().getTranslation());
+    Logger.recordOutput("Tuning/Square/Leg", leg[0]);
+    Logger.recordOutput("Tuning/Square/DistanceToCorner", error.getNorm());
+
+    if (error.getNorm() < CORNER_TOLERANCE_METERS) {
+      // Count the leg just finished before deciding whether to stop, or the last one
+      // never gets counted and the reported path is a quarter short.
+      leg[0]++;
+      pathLength[0] += sideMeters.get();
+      if (leg[0] > SQUARE_CORNERS) {
+        drive.stop();
+      }
+      return;
+    }
+
+    // Full speed down the leg, easing off over the last stretch so it settles on the
+    // corner instead of overshooting it and crabbing back.
+    double speed =
+        Math.min(speedMetersPerSec.get(), APPROACH_GAIN_PER_SEC * error.getNorm());
+    speed = Math.max(speed, MIN_APPROACH_METERS_PER_SEC);
+    Translation2d velocity = error.div(error.getNorm()).times(speed);
+
+    // Hold the starting heading. Any rotation here would smear translation error and
+    // heading error together, which is exactly what this test is built to keep apart.
+    double headingError =
+        start[0].getRotation().minus(drive.getPose().getRotation()).getRadians();
+    double omega =
+        // WPILib 2027 dropped MathUtil.clamp in favour of the JDK's own.
+        Math.clamp(
+            HEADING_GAIN_PER_SEC * headingError,
+            -MAX_CORRECTION_RAD_PER_SEC,
+            MAX_CORRECTION_RAD_PER_SEC);
+
+    drive.runVelocity(
+        new ChassisVelocities(velocity.getX(), velocity.getY(), omega)
+            .toRobotRelative(drive.getRotation()));
+  }
+
 
   /** Corners of the square, in order; the fourth returns to the start. */
   private static final int SQUARE_CORNERS = 4;

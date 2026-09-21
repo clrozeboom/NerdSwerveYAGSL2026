@@ -7,7 +7,7 @@ package frc.robot.subsystems.drive;
 import frc.robot.Constants;
 import frc.robot.util.TunableNumber;
 import org.littletonrobotics.junction.Logger;
-import org.wpilib.command2.SubsystemBase;
+import org.wpilib.command3.Mechanism;
 import org.wpilib.math.geometry.Pose2d;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.geometry.Twist2d;
@@ -29,8 +29,15 @@ import org.wpilib.system.Timer;
  *
  * <p>Heading comes from the gyro when one is connected and from integrated module positions when it
  * is not, so the drivetrain is fully drivable before any gyro is wired up.
+ *
+ * <p>Commands v3 replaced {@code SubsystemBase} with the {@link Mechanism} interface, which has no
+ * {@code periodic()} hook of its own. {@link #periodic()} below is therefore an ordinary method that
+ * {@code RobotContainer} hands to {@code Scheduler.addPeriodic}. That runs it as a sideload, and
+ * sideloads execute before triggers are polled and before any command body — the same slot
+ * {@code CommandScheduler} used to call subsystem {@code periodic()} in, so the input-snapshot
+ * ordering this class depends on is unchanged.
  */
-public class Drive extends SubsystemBase {
+public class Drive implements Mechanism {
   private static final String[] MODULE_NAMES = {"FrontLeft", "FrontRight", "BackLeft", "BackRight"};
 
   /** Matches TimedRobot's default period; used to discretize commanded velocities. */
@@ -84,7 +91,10 @@ public class Drive extends SubsystemBase {
     Telemetry.log("Field", field);
   }
 
-  @Override
+  /**
+   * Reads every input and republishes the drivetrain's state. Registered with the scheduler as a
+   * periodic sideload rather than overriding a framework hook -- see this class's javadoc.
+   */
   public void periodic() {
     // Read every input first, so the rest of the loop works from one consistent snapshot. This is
     // the property that makes AdvantageKit-style replay possible, and it is worth keeping even

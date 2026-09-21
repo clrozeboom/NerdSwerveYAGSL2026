@@ -9,8 +9,8 @@ import org.littletonrobotics.junction.Logger;
 import org.littletonrobotics.junction.networktables.NT4Publisher;
 import org.littletonrobotics.junction.wpilog.WPILOGReader;
 import org.littletonrobotics.junction.wpilog.WPILOGWriter;
-import org.wpilib.command2.Command;
-import org.wpilib.command2.CommandScheduler;
+import org.wpilib.command3.Command;
+import org.wpilib.command3.Scheduler;
 import org.wpilib.driverstation.RobotState;
 import org.wpilib.framework.RobotBase;
 import org.wpilib.hardware.hal.RobotMode;
@@ -127,9 +127,10 @@ public class Robot extends LoggedRobot {
 
   @Override
   public void robotPeriodic() {
-    // Runs the scheduler, which polls triggers, runs scheduled commands, and calls every
-    // subsystem's periodic(). Nothing in the command framework works without this.
-    CommandScheduler.getInstance().run();
+    // Runs the scheduler, which runs periodic sideloads (including Drive.periodic -- see
+    // RobotContainer), polls triggers, and advances every running command to its next yield point.
+    // Nothing in the command framework works without this.
+    Scheduler.getDefault().run();
   }
 
   @Override
@@ -153,7 +154,7 @@ public class Robot extends LoggedRobot {
     robotContainer.setMotorBrake(true);
     autonomousCommand = robotContainer.getAutonomousCommand();
     if (autonomousCommand != null) {
-      CommandScheduler.getInstance().schedule(autonomousCommand);
+      Scheduler.getDefault().schedule(autonomousCommand);
     }
   }
 
@@ -161,12 +162,13 @@ public class Robot extends LoggedRobot {
   public void teleopInit() {
     robotContainer.setMotorBrake(true);
     if (autonomousCommand != null) {
-      autonomousCommand.cancel();
+      // v3 cancels through the scheduler; Command itself has no cancel().
+      Scheduler.getDefault().cancel(autonomousCommand);
     }
   }
 
   @Override
   public void utilityInit() {
-    CommandScheduler.getInstance().cancelAll();
+    Scheduler.getDefault().cancelAll();
   }
 }

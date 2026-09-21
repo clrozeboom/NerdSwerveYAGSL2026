@@ -7,8 +7,7 @@ package frc.robot.commands;
 import frc.robot.Constants;
 import frc.robot.subsystems.drive.Drive;
 import java.util.function.DoubleSupplier;
-import org.wpilib.command2.Command;
-import org.wpilib.command2.Commands;
+import org.wpilib.command3.Command;
 import org.wpilib.math.geometry.Rotation2d;
 import org.wpilib.math.geometry.Translation2d;
 import org.wpilib.math.kinematics.ChassisVelocities;
@@ -33,23 +32,24 @@ public final class DriveCommands {
    */
   public static Command joystickDrive(
       Drive drive, DoubleSupplier xSupplier, DoubleSupplier ySupplier, DoubleSupplier omegaSupplier) {
-    return Commands.run(
-        () -> {
-          Translation2d linear =
-              applyRadialDeadband(xSupplier.getAsDouble(), ySupplier.getAsDouble());
-          double omega =
-              MathUtil.applyDeadband(omegaSupplier.getAsDouble(), Constants.Operator.DEADBAND);
-          omega = Math.copySign(omega * omega, omega);
+    return drive
+        .runRepeatedly(
+            () -> {
+              Translation2d linear =
+                  applyRadialDeadband(xSupplier.getAsDouble(), ySupplier.getAsDouble());
+              double omega =
+                  MathUtil.applyDeadband(omegaSupplier.getAsDouble(), Constants.Operator.DEADBAND);
+              omega = Math.copySign(omega * omega, omega);
 
-          ChassisVelocities fieldRelative =
-              new ChassisVelocities(
-                  linear.getX() * drive.getMaxLinearSpeed(),
-                  linear.getY() * drive.getMaxLinearSpeed(),
-                  omega * drive.getMaxAngularSpeed());
+              ChassisVelocities fieldRelative =
+                  new ChassisVelocities(
+                      linear.getX() * drive.getMaxLinearSpeed(),
+                      linear.getY() * drive.getMaxLinearSpeed(),
+                      omega * drive.getMaxAngularSpeed());
 
-          drive.runVelocity(fieldRelative.toRobotRelative(drive.getRotation()));
-        },
-        drive);
+              drive.runVelocity(fieldRelative.toRobotRelative(drive.getRotation()));
+            })
+        .named("Field-Relative Drive");
   }
 
   /**
@@ -64,26 +64,27 @@ public final class DriveCommands {
    */
   public static Command robotRelativeDrive(
       Drive drive, DoubleSupplier xSupplier, DoubleSupplier ySupplier, DoubleSupplier omegaSupplier) {
-    return Commands.run(
-        () -> {
-          Translation2d linear =
-              applyRadialDeadband(xSupplier.getAsDouble(), ySupplier.getAsDouble());
-          double omega =
-              MathUtil.applyDeadband(omegaSupplier.getAsDouble(), Constants.Operator.DEADBAND);
-          omega = Math.copySign(omega * omega, omega);
+    return drive
+        .runRepeatedly(
+            () -> {
+              Translation2d linear =
+                  applyRadialDeadband(xSupplier.getAsDouble(), ySupplier.getAsDouble());
+              double omega =
+                  MathUtil.applyDeadband(omegaSupplier.getAsDouble(), Constants.Operator.DEADBAND);
+              omega = Math.copySign(omega * omega, omega);
 
-          drive.runVelocity(
-              new ChassisVelocities(
-                  linear.getX() * drive.getMaxLinearSpeed(),
-                  linear.getY() * drive.getMaxLinearSpeed(),
-                  omega * drive.getMaxAngularSpeed()));
-        },
-        drive);
+              drive.runVelocity(
+                  new ChassisVelocities(
+                      linear.getX() * drive.getMaxLinearSpeed(),
+                      linear.getY() * drive.getMaxLinearSpeed(),
+                      omega * drive.getMaxAngularSpeed()));
+            })
+        .named("Robot-Relative Drive");
   }
 
   /** Holds the modules in an X so the robot resists being pushed. */
   public static Command stopWithX(Drive drive) {
-    return Commands.run(drive::stopWithX, drive);
+    return drive.runRepeatedly(drive::stopWithX).named("Stop With X");
   }
 
   /**
