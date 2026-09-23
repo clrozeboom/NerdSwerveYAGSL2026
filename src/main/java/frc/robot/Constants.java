@@ -206,6 +206,57 @@ public final class Constants {
     public static final double NOMINAL_VOLTAGE = 12.0;
 
     /**
+     * How often each drive SPARK broadcasts its encoder position and velocity, in milliseconds.
+     *
+     * <p>Set explicitly because the stock rate is the single largest consumer of can_s0. Counting
+     * a 2000-frame {@code candump} with the robot program stopped: two status frames per
+     * controller carry 76% of every frame on the bus, eight controllers together carry 80%, and a
+     * CTRE PDP at device 0 carries the remaining 20%. Against the measured ~1450 frames/s that
+     * works out to roughly a 14 ms period on each of those two frames.
+     *
+     * <p>20 ms is the floor worth asking for: the robot loop reads these once per 20 ms cycle, so
+     * anything faster is a frame the code never looks at. Odometry and the drive velocity plots
+     * both come from here, which is why this is the one signal kept at loop rate.
+     */
+    public static final int DRIVE_STATUS_PERIOD_MS = 20;
+
+    /**
+     * The same, for the turn SPARKs -- and far slower, because almost nothing depends on it.
+     *
+     * <p>The steering loop closes on the RioBridge absolute encoder over can_s1, not on the motor
+     * encoder, and the turn controllers are driven open-loop with a voltage computed on this side.
+     * What the turn SPARK reports back is therefore a backlash diagnostic
+     * ({@code Drive/TurnMotorAngles}) plus a fallback: {@code runTurnControl} switches to the motor
+     * encoder if the RioBridge's Encoders frame goes more than
+     * {@code ENCODER_STALE_THRESHOLD_SECONDS} stale. That fallback has never engaged in any log --
+     * {@code TurnEncoderConnected} has been true on all four modules every run -- and it is a
+     * degraded mode either way, so 10 Hz is enough to keep it usable without spending bus on it.
+     *
+     * <p>Halving the drive rate and cutting the turn rate by seven takes can_s0 to roughly 57% of
+     * its current traffic. If that is still not enough, the PDP is the next 20%.
+     */
+    public static final int TURN_STATUS_PERIOD_MS = 100;
+
+    /**
+     * How often the SPARKs report everything that is only ever read for diagnostics, in
+     * milliseconds -- applied output, current, faults and the like.
+     *
+     * <p>These are worth keeping in the log, but nothing closes a loop on them, so they run slow
+     * enough to stay out of the way.
+     */
+    public static final int DIAGNOSTIC_STATUS_PERIOD_MS = 100;
+
+    /**
+     * How often the SPARKs report signals this robot never reads at all, in milliseconds.
+     *
+     * <p>Analog inputs, alternate and absolute encoders, duty cycle, integral accumulator and the
+     * MAXMotion setpoints are all unused here -- nothing is wired to them and nothing queries
+     * them. REVLib has no way to switch a frame off outright, so they go as slow as is sensible
+     * rather than to zero.
+     */
+    public static final int UNUSED_STATUS_PERIOD_MS = 1000;
+
+    /**
      * Whether the absolute encoders are actually readable this loop.
      *
      * <p>They still can't be wired to this SystemCore directly -- that hasn't changed. What

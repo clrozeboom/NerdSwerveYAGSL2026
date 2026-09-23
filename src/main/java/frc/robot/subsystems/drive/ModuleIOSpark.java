@@ -193,6 +193,7 @@ public class ModuleIOSpark implements ModuleIO {
         driveGainToSparkUnits(Constants.Module.DRIVE_KP),
         0.0,
         driveGainToSparkUnits(Constants.Module.DRIVE_KD));
+    applyStatusPeriods(driveConfig, Constants.Module.DRIVE_STATUS_PERIOD_MS);
     driveSpark.configure(driveConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     SparkMaxConfig turnConfig = new SparkMaxConfig();
@@ -204,6 +205,7 @@ public class ModuleIOSpark implements ModuleIO {
     // No closed-loop config for the turn SPARK any more: the position loop lives here now, on the
     // absolute encoder, and this controller is driven open-loop with the voltage it asks for. The
     // motor encoder is still configured because it is worth logging for backlash.
+    applyStatusPeriods(turnConfig, Constants.Module.TURN_STATUS_PERIOD_MS);
     turnSpark.configure(turnConfig, ResetMode.kResetSafeParameters, PersistMode.kPersistParameters);
 
     // With an absolute encoder the module can work out where it is pointing on its own. Without one
@@ -325,6 +327,60 @@ public class ModuleIOSpark implements ModuleIO {
    */
   static double adcCountToTurnFraction(int rawCount) {
     return rawCount / ENCODER_ADC_COUNTS;
+  }
+
+  /**
+   * Sets how often this controller broadcasts each of its status frames.
+   *
+   * <p>Every period is set explicitly rather than left at the firmware default, because the
+   * default is what put can_s0 at ~1450 frames/s with eight controllers on it -- see
+   * {@link Constants.Module#DRIVE_STATUS_PERIOD_MS} for where that number comes from and what
+   * share each frame holds. The encoder position and velocity are the two that matter and take
+   * {@code encoderPeriodMs}; everything else is either a diagnostic or a signal this robot never
+   * reads, and is pushed out of the way.
+   *
+   * <p>Whether any of this reaches the controllers is a separate question. Configuration is a
+   * write, and writes have been landing -- the motors respond -- but REVLib verifies a
+   * {@code configure} by reading parameters back, and reading is precisely what is broken on this
+   * bus. If the periods do not appear to change, set them over USB with the REV Hardware Client
+   * instead, which does not depend on CAN at all.
+   *
+   * @param config the configuration being built
+   * @param encoderPeriodMs how often to report primary encoder position and velocity
+   */
+  private static void applyStatusPeriods(SparkMaxConfig config, int encoderPeriodMs) {
+    int diag = Constants.Module.DIAGNOSTIC_STATUS_PERIOD_MS;
+    int unused = Constants.Module.UNUSED_STATUS_PERIOD_MS;
+
+    config
+        .signals
+        // The two that carry the robot: odometry and the velocity plots.
+        .primaryEncoderPositionPeriodMs(encoderPeriodMs)
+        .primaryEncoderVelocityPeriodMs(encoderPeriodMs)
+        // Logged and looked at after the fact, never closed on.
+        .appliedOutputPeriodMs(diag)
+        .outputCurrentPeriodMs(diag)
+        .busVoltagePeriodMs(diag)
+        .faultsPeriodMs(diag)
+        .warningsPeriodMs(diag)
+        .limitsPeriodMs(diag)
+        .motorTemperaturePeriodMs(unused)
+        // Nothing is wired to these and nothing queries them.
+        .analogPositionPeriodMs(unused)
+        .analogVelocityPeriodMs(unused)
+        .analogVoltagePeriodMs(unused)
+        .externalOrAltEncoderPosition(unused)
+        .externalOrAltEncoderVelocity(unused)
+        .absoluteEncoderPositionPeriodMs(unused)
+        .absoluteEncoderVelocityPeriodMs(unused)
+        .dutyCyclePeriodMs(unused)
+        .unadjustedDutyCyclePeriodMs(unused)
+        .iAccumulationPeriodMs(unused)
+        .setpointPeriodMs(unused)
+        .isAtSetpointPeriodMs(unused)
+        .selectedSlotPeriodMs(unused)
+        .maxMotionSetpointPositionPeriodMs(unused)
+        .maxMotionSetpointVelocityPeriodMs(unused);
   }
 
   @Override
