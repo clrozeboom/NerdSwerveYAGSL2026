@@ -33,6 +33,16 @@ public final class DriverDisplay {
    */
   private static final double UPDATE_PERIOD_SECS = 0.25;
 
+  /**
+   * Width every caption is padded to, so the values start in the same column.
+   *
+   * <p>Ten is the length of the longest caption in use, {@code FrontRight}, so nothing is currently
+   * truncated -- but {@link #caption(String)} truncates rather than overflow, because a caption that
+   * ran long would push one row's values out of line with the rest and the column is the whole
+   * point.
+   */
+  private static final int CAPTION_WIDTH = 10;
+
   private final Drive drive;
   private final Supplier<String> selectedRoutine;
   private final Timer timer = new Timer();
@@ -54,9 +64,9 @@ public final class DriverDisplay {
     }
     timer.restart();
 
-    DriverStationDisplay.addData("Auto", selectedRoutine.get());
+    DriverStationDisplay.addData(caption("Auto"), selectedRoutine.get());
     DriverStationDisplay.addData(
-        "Gyro",
+        caption("Gyro"),
         "%+7.1f deg%s",
         drive.getRotation().getDegrees(),
         drive.isGyroConnected() ? "" : "  (integrated from wheels)");
@@ -66,7 +76,7 @@ public final class DriverDisplay {
       // pointing where the code thinks it is", and the answer is checkable by eye against the
       // module itself.
       DriverStationDisplay.addData(
-          module.getName(),
+          caption(module.getName()),
           "%+7.1f deg  %+6.2f m/s%s",
           module.getAngle().getDegrees(),
           module.getVelocityMetersPerSec(),
@@ -81,8 +91,23 @@ public final class DriverDisplay {
         connected++;
       }
     }
-    DriverStationDisplay.addData("SPARKs", "%d/4 modules reporting", connected);
+    DriverStationDisplay.addData(caption("SPARKs"), "%d/4 modules reporting", connected);
 
     DriverStationDisplay.updateLines();
+  }
+
+  /**
+   * Pads a caption to {@link #CAPTION_WIDTH}, right justified.
+   *
+   * <p>{@code DriverStationDisplay} writes a line as {@code caption + " : " + value}, so padding
+   * the caption is what lines the values up into a column. The width is fixed rather than measured
+   * from the captions in use, because the display is rebuilt from scratch every update and a width
+   * that moved with the contents would make the column jump.
+   *
+   * @param name the caption
+   * @return the caption in exactly {@link #CAPTION_WIDTH} characters, truncated if it is longer
+   */
+  static String caption(String name) {
+    return String.format("%" + CAPTION_WIDTH + "." + CAPTION_WIDTH + "s", name);
   }
 }
