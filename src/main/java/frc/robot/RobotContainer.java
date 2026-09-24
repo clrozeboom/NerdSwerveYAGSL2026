@@ -13,11 +13,14 @@ import frc.robot.subsystems.drive.ModuleIOSim;
 import frc.robot.subsystems.drive.ModuleIOSpark;
 import frc.robot.subsystems.drive.riobridge.GyroIORioBridge;
 import frc.robot.subsystems.drive.riobridge.RioBridgeCan;
-import org.littletonrobotics.junction.networktables.LoggedNetworkChooser;
+import java.util.ArrayList;
+import java.util.List;
 import org.wpilib.command3.Command;
 import org.wpilib.command3.Scheduler;
 import org.wpilib.command3.button.CommandGamepad;
+import org.wpilib.driverstation.RobotState;
 import org.wpilib.framework.RobotBase;
+import org.wpilib.hardware.hal.RobotMode;
 
 /**
  * Wires the robot together: picks the IO implementations for the current environment, builds the
@@ -27,13 +30,26 @@ import org.wpilib.framework.RobotBase;
  * simulator. Everything below {@link Drive} takes its IO as a constructor argument.
  */
 public class RobotContainer {
+  /** Driver-station group for the routines that would be run in a match. */
+  private static final String MATCH_GROUP = "Match";
+
+  /** Driver-station group for the bring-up routines; see {@link TuningCommands}. */
+  private static final String TUNING_GROUP = "Tuning";
+
+  /**
+   * One selectable autonomous routine.
+   *
+   * @param name what the driver station lists it as, and what identifies it when selected
+   * @param group which heading the driver station files it under
+   * @param command what to run
+   */
+  record AutoRoutine(String name, String group, Command command) {}
+
   private final CommandGamepad driver = new CommandGamepad(0);
   private final Drive drive;
-  // alpha-7 deleted SendableChooser. AdvantageKit's replacement takes the NetworkTables key in
-  // its constructor, so there is no separate publish step, and the selection is written to the log
-  // and fed back on replay — which a bare tunable Selectable would not do.
-  private final LoggedNetworkChooser<Command> autoChooser =
-      new LoggedNetworkChooser<>("Auto Chooser");
+
+  /** Every routine offered for autonomous, in the order the driver station lists them. */
+  private final List<AutoRoutine> autoRoutines = new ArrayList<>();
 
   public RobotContainer() {
     if (RobotBase.isReal()) {
@@ -69,8 +85,11 @@ public class RobotContainer {
     // which is the slot CommandScheduler used to call subsystem periodic() in -- so every command
     // still sees inputs read this same loop, as it did under v2.
     Scheduler.getDefault().addPeriodic(drive::periodic);
+    Scheduler.getDefault()
+        .addPeriodic(new DriverDisplay(drive, this::selectedRoutineName)::update);
 
-    configureAutoChooser();
+    configureAutoRoutines();
+    publishOpModes();
     configureBindings();
   }
 
@@ -116,35 +135,101 @@ public class RobotContainer {
     driver.back().onTrue(TuningCommands.zeroModules(drive));
   }
 
-  private void configureAutoChooser() {
-    autoChooser.addDefault(
-        "Do Nothing", Command.noRequirements(coroutine -> {}).named("Do Nothing"));
-    // Bring-up routines. These live on the auto chooser because that is the one place a command can
-    // be picked and run without a controller binding; see TuningCommands for what each one measures
-    // and which of them move the robot.
+  private void configureAutoRoutines() {
+    // The first entry is the fallback: it is what runs if the driver station reports an operating
+    // mode this code does not recognise, which RobotState.getOpMode() explicitly warns can happen.
+    autoRoutines.add(
+        new AutoRoutine(
+            "Do Nothing", MATCH_GROUP, Command.noRequirements(coroutine -> {}).named("Do Nothing")));
+
+    // Bring-up routines. Under the chooser these needed AdvantageScope or Elastic open to reach;
+    // as operating modes they are pickable from the driver station itself, which is where whoever
+    // is running them is already standing. See TuningCommands for what each one measures and which
+    // of them move the robot.
     if (Constants.TUNING_MODE) {
       // Listed in the order the README's bring-up sequence works through them: everything that
       // fits in a metre of clearance first, then the two that need a runway.
       if (Constants.Module.HAS_ABSOLUTE_ENCODERS) {
-        autoChooser.add("Tuning 1: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
+        addTuning("1: Report Encoder Offsets", TuningCommands.reportEncoderOffsets(drive));
       } else {
-        autoChooser.add("Tuning 1: Zero Modules (align wheels first)", TuningCommands.zeroModules(drive));
+        addTuning("1: Zero Modules (align wheels first)", TuningCommands.zeroModules(drive));
       }
-      autoChooser.add("Tuning 2: Feedforward Ramp (quick)", TuningCommands.feedforwardRamp(drive));
-      autoChooser.add("Tuning 2: Steady-State Sweep (kS/kV)", TuningCommands.steadyStateSweep(drive));
-      autoChooser.add("Tuning 2: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
-      autoChooser.add("Tuning 3: Spin Step Response", TuningCommands.spinStepResponse(drive));
-      autoChooser.add("Tuning 3: Turn Step Response", TuningCommands.turnStepResponse(drive));
-      autoChooser.add("Tuning 4: Measure Wheel Radius", TuningCommands.measureWheelRadius(drive));
-      autoChooser.add("Tuning 5: Drive Square (odometry check)", TuningCommands.driveSquare(drive));
-      autoChooser.add("Tuning (opt): Drive Step Response", TuningCommands.driveStepResponse(drive));
-      autoChooser.add("Tuning (opt): Drive SysId (all four)", TuningCommands.driveSysIdFull(drive));
+      addTuning("2: Feedforward Ramp (quick)", TuningCommands.feedforwardRamp(drive));
+      addTuning("2: Steady-State Sweep (kS/kV)", TuningCommands.steadyStateSweep(drive));
+      addTuning("2: Spin SysId (all four)", TuningCommands.spinSysIdFull(drive));
+      addTuning("3: Spin Step Response", TuningCommands.spinStepResponse(drive));
+      addTuning("3: Turn Step Response", TuningCommands.turnStepResponse(drive));
+      addTuning("4: Measure Wheel Radius", TuningCommands.measureWheelRadius(drive));
+      addTuning("5: Drive Square (odometry check)", TuningCommands.driveSquare(drive));
+      addTuning("opt: Drive Step Response", TuningCommands.driveStepResponse(drive));
+      addTuning("opt: Drive SysId (all four)", TuningCommands.driveSysIdFull(drive));
     }
   }
 
-  /** The command to run in autonomous, from the dashboard chooser. */
+  private void addTuning(String name, Command command) {
+    autoRoutines.add(new AutoRoutine(name, TUNING_GROUP, command));
+  }
+
+  /**
+   * Publishes the operating modes the driver station offers, including one per autonomous routine.
+   *
+   * <p>The 2027 driver station is operating-mode driven: it lists the modes the robot publishes and
+   * you pick one to enable. Nothing registers any by default -- {@code TimedRobot} has no
+   * operating-mode code at all and the backend's registry starts empty -- so a robot that never
+   * calls {@link RobotState#addOpMode} publishes an empty list and there is nothing to select.
+   *
+   * <p>Nothing limits a robot mode to a single entry, which is what replaces the dashboard chooser
+   * here. {@code addOpMode} rejects a duplicate name within a robot mode and otherwise takes as
+   * many autonomous entries as it is given, each with a group the driver station files it under. Its
+   * javadoc describes exactly this use: in a match the selected operating mode "will indicate the
+   * operating mode selected for auto before the match starts". Selection then costs no dashboard at
+   * all, and AdvantageKit already records it as {@code /DriverStation/OpMode}, so it is captured and
+   * replayed the same way the chooser's selection was.
+   *
+   * <p>Registration is static, so this does not require extending {@code OpModeRobot}. That class
+   * adds automatic discovery of {@code OpMode} subclasses and a per-mode lifecycle; underneath, its
+   * own {@code publishOpModes()} simply calls {@link RobotState#publishOpModes()} exactly as this
+   * does. Registering here keeps {@code TimedRobot} dispatching through {@code teleopPeriodic()}
+   * and friends as usual, because those follow the driver station's robot mode rather than the
+   * operating mode itself.
+   */
+  private void publishOpModes() {
+    RobotState.addOpMode(RobotMode.TELEOPERATED, "Teleop");
+    for (AutoRoutine routine : autoRoutines) {
+      RobotState.addOpMode(RobotMode.AUTONOMOUS, routine.name(), routine.group());
+    }
+    RobotState.addOpMode(RobotMode.UTILITY, "Utility");
+    RobotState.publishOpModes();
+  }
+
+  /** What the driver station currently has selected, for the display. */
+  private String selectedRoutineName() {
+    return routineFor(autoRoutines, RobotState.getOpMode()).name();
+  }
+
+  /**
+   * Finds the routine the driver station has selected, falling back to the first.
+   *
+   * <p>Separate and static so the fallback can be tested: {@link RobotState#getOpMode()} documents
+   * that it "may return a string not in the list of options", and a teleop or utility mode is
+   * selected often enough that the miss is the normal case rather than an error.
+   *
+   * @param routines every routine on offer, the first being the fallback
+   * @param selectedName what the driver station reports as selected
+   * @return the matching routine, or the first one
+   */
+  static AutoRoutine routineFor(List<AutoRoutine> routines, String selectedName) {
+    for (AutoRoutine routine : routines) {
+      if (routine.name().equals(selectedName)) {
+        return routine;
+      }
+    }
+    return routines.get(0);
+  }
+
+  /** The command to run in autonomous, from the operating mode selected on the driver station. */
   public Command getAutonomousCommand() {
-    return autoChooser.getSelected();
+    return routineFor(autoRoutines, RobotState.getOpMode()).command();
   }
 
   /** Puts the drive motors into brake or coast. */

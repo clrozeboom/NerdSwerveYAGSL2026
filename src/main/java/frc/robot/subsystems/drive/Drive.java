@@ -383,6 +383,19 @@ public class Drive implements Mechanism {
     return kinematics.toChassisVelocities(getModuleVelocities());
   }
 
+  /**
+   * Whether the heading is coming from the gyro rather than from integrated module positions.
+   *
+   * <p>False is not a fault -- {@link #getRotation()} falls back to integrating the modules and the
+   * robot stays drivable -- but it does mean the heading will drift, which is worth knowing while
+   * standing next to the robot.
+   *
+   * @return true if the gyro is reporting
+   */
+  public boolean isGyroConnected() {
+    return gyroInputs.connected;
+  }
+
   /** Robot heading, from the gyro when present and from the modules when not. */
   public Rotation2d getRotation() {
     return rawGyroRotation;
